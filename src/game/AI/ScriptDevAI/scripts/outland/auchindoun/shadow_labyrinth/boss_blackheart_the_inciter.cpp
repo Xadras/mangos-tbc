@@ -112,11 +112,14 @@ struct boss_blackheart_the_inciterAI : public ScriptedAI
 
     void EnterEvadeMode() override
     {
+        m_creature->MonsterSay("enter evade...", LANG_COMMON);
         // if we are waiting for Incite chaos to expire don't evade
         if (m_uiInciteChaosWaitTimer)
             return;
 
-        ScriptedAI::EnterEvadeMode();
+        m_creature->MonsterSay("EVADE!: " + m_uiInciteChaosWaitTimer, LANG_COMMON);
+
+        //ScriptedAI::EnterEvadeMode();
     }
 
     void UpdateAI(const uint32 uiDiff) override
@@ -151,6 +154,7 @@ struct boss_blackheart_the_inciterAI : public ScriptedAI
 
             if (DoCastSpellIfCan(m_creature, SPELL_INCITE_CHAOS) == CAST_OK)
             {
+                m_creature->MonsterSay("chaos init", LANG_COMMON);
                 m_creature->HandleEmote(EMOTE_STATE_LAUGH);
                 m_uiInciteChaosTimer = 55000;
                 m_uiInciteChaosWaitTimer = 16000;
