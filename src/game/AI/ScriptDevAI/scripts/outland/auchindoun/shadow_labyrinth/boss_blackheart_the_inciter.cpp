@@ -143,8 +143,12 @@ struct boss_blackheart_the_inciterAI : public ScriptedAI
         }
 
         // Return since we have no pTarget
-        if ((!m_creature->SelectHostileTarget() || !m_creature->getVictim()) && !m_uiInciteChaosWaitTimer)
+        if ((!m_creature->SelectHostileTarget() || !m_creature->getVictim()) && !m_uiInciteChaosWaitTimer) {
+            m_creature->MonsterSay("returned", LANG_COMMON);
+            printf("test");
             return;
+        }
+            
 
         if (m_uiInciteChaosTimer < uiDiff)
         {
@@ -158,7 +162,6 @@ struct boss_blackheart_the_inciterAI : public ScriptedAI
                 m_creature->HandleEmote(EMOTE_STATE_LAUGH);
                 m_uiInciteChaosTimer = 25000;
                 m_uiInciteChaosWaitTimer = 16000;
-                return;
             }
         }
         else
@@ -174,7 +177,6 @@ struct boss_blackheart_the_inciterAI : public ScriptedAI
                 {
                     m_uiChargeTimer = urand(30000, 43000);
                     DoResetThreat();
-                    return;
                 }
             }
         }
