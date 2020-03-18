@@ -119,7 +119,7 @@ struct boss_blackheart_the_inciterAI : public ScriptedAI
 
         m_creature->MonsterSay("EVADE!: " + m_uiInciteChaosWaitTimer, LANG_COMMON);
 
-        //ScriptedAI::EnterEvadeMode();
+        ScriptedAI::EnterEvadeMode();
     }
 
     void UpdateAI(const uint32 uiDiff) override
@@ -143,7 +143,7 @@ struct boss_blackheart_the_inciterAI : public ScriptedAI
         }
 
         // Return since we have no pTarget
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim() || m_uiInciteChaosWaitTimer)
             return;
 
         if (m_uiInciteChaosTimer < uiDiff)
@@ -156,7 +156,7 @@ struct boss_blackheart_the_inciterAI : public ScriptedAI
             {
                 m_creature->MonsterSay("chaos init", LANG_COMMON);
                 m_creature->HandleEmote(EMOTE_STATE_LAUGH);
-                m_uiInciteChaosTimer = 55000;
+                m_uiInciteChaosTimer = 25000;
                 m_uiInciteChaosWaitTimer = 16000;
                 return;
             }
