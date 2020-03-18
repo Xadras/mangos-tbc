@@ -143,7 +143,7 @@ struct boss_blackheart_the_inciterAI : public ScriptedAI
         }
 
         // Return since we have no pTarget
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim() || m_uiInciteChaosWaitTimer)
+        if ((!m_creature->SelectHostileTarget() || !m_creature->getVictim()) && !m_uiInciteChaosWaitTimer)
             return;
 
         if (m_uiInciteChaosTimer < uiDiff)
