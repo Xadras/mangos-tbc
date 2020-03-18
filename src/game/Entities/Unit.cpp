@@ -8974,6 +8974,9 @@ bool Unit::SelectHostileTarget()
         }
     }
 
+    if (!IsClientControlled() && GetTypeId() == TYPEID_PLAYER)
+        return true;
+
     // enter in evade mode in other case
     FixateTarget(nullptr);
     AI()->EnterEvadeMode();
