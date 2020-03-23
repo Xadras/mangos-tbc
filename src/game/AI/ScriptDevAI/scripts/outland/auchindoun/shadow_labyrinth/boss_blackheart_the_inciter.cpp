@@ -158,6 +158,15 @@ struct boss_blackheart_the_inciterAI : public ScriptedAI
 
             if (DoCastSpellIfCan(m_creature, SPELL_INCITE_CHAOS) == CAST_OK)
             {
+				for (GuidVector::const_iterator itr = m_vTargetsGuids.begin(); itr != m_vTargetsGuids.end(); ++itr)
+				{
+					if (Player* plr = m_creature->GetMap()->GetPlayer(*itr))
+					{
+						Unit* pTarget = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0);
+						if (pTarget)
+							plr->AI()->AttackStart(pTarget);
+					}
+				}
                 m_creature->MonsterSay("chaos init", LANG_COMMON);
                 m_creature->HandleEmote(EMOTE_STATE_LAUGH);
                 m_uiInciteChaosTimer = 25000;

@@ -228,8 +228,12 @@ CanCastResult UnitAI::DoCastSpellIfCan(Unit* target, uint32 spellId, uint32 cast
 
 void UnitAI::AttackStart(Unit* who)
 {
-    if (!who || HasReactState(REACT_PASSIVE))
-        return;
+	who->MonsterSay("AttackStarted", LANG_GERMAN);
+	if (!who || HasReactState(REACT_PASSIVE)) {
+		who->MonsterSay("returned", LANG_GERMAN);
+		return;
+	}
+        
 
     if (m_unit->Attack(who, m_meleeEnabled))
     {
