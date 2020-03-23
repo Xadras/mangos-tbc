@@ -228,9 +228,9 @@ CanCastResult UnitAI::DoCastSpellIfCan(Unit* target, uint32 spellId, uint32 cast
 
 void UnitAI::AttackStart(Unit* who)
 {
-	who->MonsterSay("AttackStarted", LANG_GERMAN);
+	who->MonsterSay("AttackStarted", LANG_COMMON);
 	if (!who || HasReactState(REACT_PASSIVE)) {
-		who->MonsterSay("returned", LANG_GERMAN);
+		who->MonsterSay("returned", LANG_COMMON);
 		return;
 	}
         
