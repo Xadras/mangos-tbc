@@ -4184,10 +4184,6 @@ void Aura::HandleModCharm(bool apply, bool Real)
                 if (target->GetTypeId() == TYPEID_UNIT && target->AI())
                     target->AI()->SendAIEvent(AI_EVENT_CUSTOM_A, target, (Creature*)target);
                 break;
-            case 33684:
-                if (caster->GetTypeId() == TYPEID_UNIT)
-                    static_cast<Creature*>(caster)->ForcedDespawn();
-                break;
         }
     }
 }
