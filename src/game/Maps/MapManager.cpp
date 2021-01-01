@@ -44,9 +44,6 @@ MapManager::~MapManager()
     for (auto& i_map : i_maps)
         delete i_map.second;
 
-    for (auto m_Transport : m_Transports)
-        delete m_Transport;
-
     DeleteStateMachine();
 }
 
@@ -207,9 +204,6 @@ void MapManager::Update(uint32 diff)
     if (m_updater.activated())
         m_updater.wait();
 
-    for (Transport* m_Transport : m_Transports)
-        m_Transport->Update((uint32)i_timer.GetCurrent());
-
     // remove all maps which can be unloaded
     MapMapType::iterator iter = i_maps.begin();
     while (iter != i_maps.end())
@@ -307,24 +301,6 @@ uint32 MapManager::GetNumPlayersInInstances()
         ret += map->GetPlayers().getSize();
     }
     return ret;
-}
-
-uint32 MapManager::GetMapUpdateMinTime(uint32 mapId, uint32 instance)
-{
-    std::lock_guard<std::mutex> lock(m_lock);
-    return i_maps[MapID(mapId, instance)]->GetUpdateTimeMin();
-}
-
-uint32 MapManager::GetMapUpdateMaxTime(uint32 mapId, uint32 instance)
-{
-    std::lock_guard<std::mutex> lock(m_lock);
-    return i_maps[MapID(mapId, instance)]->GetUpdateTimeMax();
-}
-
-uint32 MapManager::GetMapUpdateAvgTime(uint32 mapId, uint32 instance)
-{
-    std::lock_guard<std::mutex> lock(m_lock);
-    return i_maps[MapID(mapId, instance)]->GetUpdateTimeAvg();
 }
 
 ///// returns a new or existing Instance

@@ -172,9 +172,9 @@ void BattleGround::BroadcastWorker(Do& _do)
 /**
   Constructor
 */
-BattleGround::BattleGround(): m_buffChange(false), m_arenaBuffSpawned(false), m_startDelayTime(0), m_startMaxDist(0)
+BattleGround::BattleGround(): m_buffChange(false), m_startDelayTime(0), m_arenaBuffSpawned(false), m_startMaxDist(0)
 {
-    m_typeId            = BattleGroundTypeId(0);
+    m_typeId            = BATTLEGROUND_TYPE_NONE;
     m_status            = STATUS_NONE;
     m_clientInstanceId  = 0;
     m_endTime           = 0;
@@ -183,7 +183,7 @@ BattleGround::BattleGround(): m_buffChange(false), m_arenaBuffSpawned(false), m_
     m_invitedHorde      = 0;
     m_arenaType         = ARENA_TYPE_NONE;
     m_isArena           = false;
-    m_winner            = TEAM_NONE;
+    m_winner            = WINNER_NONE;
     m_startTime         = 0;
     m_validStartPositionTimer = 0;
     m_events            = 0;
@@ -750,6 +750,8 @@ void BattleGround::EndBattleGround(Team winner)
         winmsg_id = IsBattleGround() ? LANG_BG_A_WINS : LANG_ARENA_GOLD_WINS;
         PlaySoundToAll(SOUND_ALLIANCE_WINS);
 
+        SetWinner(WINNER_ALLIANCE);
+
         // reversed index for the bg score storage system
         bgScoresWinner = TEAM_INDEX_HORDE;
     }
@@ -758,9 +760,13 @@ void BattleGround::EndBattleGround(Team winner)
         winmsg_id = IsBattleGround() ? LANG_BG_H_WINS : LANG_ARENA_GREEN_WINS;
         PlaySoundToAll(SOUND_HORDE_WINS);
 
+        SetWinner(WINNER_HORDE);
+
         // reversed index for the bg score storage system
         bgScoresWinner = TEAM_INDEX_ALLIANCE;
     }
+    else
+        SetWinner(WINNER_NONE);
 
     // store battleground scores
     if (IsBattleGround() && sWorld.getConfig(CONFIG_BOOL_BATTLEGROUND_SCORE_STATISTICS))
@@ -783,8 +789,6 @@ void BattleGround::EndBattleGround(Team winner)
 
         stmt.PExecute(battleground_id, bgScoresWinner, battleground_bracket, battleground_type);
     }
-
-    SetWinner(winner);
 
     SetStatus(STATUS_WAIT_LEAVE);
     // we must set it this way, because end time is sent in packet!
@@ -1281,7 +1285,7 @@ void BattleGround::RemovePlayerAtLeave(ObjectGuid playerGuid, bool isOnTransport
 */
 void BattleGround::Reset()
 {
-    SetWinner(TEAM_NONE);
+    SetWinner(WINNER_NONE);
     SetStatus(STATUS_WAIT_QUEUE);
     SetStartTime(0);
     SetEndTime(0);
@@ -1844,14 +1848,10 @@ void BattleGround::SendMessageToAll(int32 entry, ChatMsg type, Player const* sou
 
   @param    text entry
   @param    language
-  @param    creature guid
+  @param    creature source
 */
-void BattleGround::SendYellToAll(int32 entry, uint32 language, ObjectGuid guid)
+void BattleGround::SendYellToAll(int32 entry, uint32 language, Creature const* source)
 {
-    Creature* source = GetBgMap()->GetCreature(guid);
-    if (!source)
-        return;
-
     MaNGOS::BattleGroundYellBuilder bg_builder(Language(language), entry, source);
     MaNGOS::LocalizedPacketDo<MaNGOS::BattleGroundYellBuilder> bg_do(bg_builder);
     BroadcastWorker(bg_do);
@@ -1894,11 +1894,8 @@ void BattleGround::SendMessage2ToAll(int32 entry, ChatMsg type, Player const* so
   @param    arg1
   @param    arg2
 */
-void BattleGround::SendYell2ToAll(int32 entry, uint32 language, ObjectGuid guid, int32 arg1, int32 arg2)
+void BattleGround::SendYell2ToAll(int32 entry, uint32 language, Creature const* source, int32 arg1, int32 arg2)
 {
-    Creature* source = GetBgMap()->GetCreature(guid);
-    if (!source)
-        return;
     MaNGOS::BattleGround2YellBuilder bg_builder(Language(language), entry, source, arg1, arg2);
     MaNGOS::LocalizedPacketDo<MaNGOS::BattleGround2YellBuilder> bg_do(bg_builder);
     BroadcastWorker(bg_do);
@@ -2059,11 +2056,37 @@ void BattleGround::SetBgRaid(Team team, Group* bgRaid)
 }
 
 /**
-  Function that returns the closes graveyard
+  Function that returns the gameobject pointer that was stored in m_goEntryGuidStore. Can return nullptr
 
-  @param    player
+  @param    gameobject entry
 */
-WorldSafeLocsEntry const* BattleGround::GetClosestGraveYard(Player* player)
+GameObject* BattleGround::GetSingleGameObjectFromStorage(uint32 entry) const
 {
-    return sObjectMgr.GetClosestGraveYard(player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetMapId(), player->GetTeam());
+    auto iter = m_goEntryGuidStore.find(entry);
+    if (iter != m_goEntryGuidStore.end())
+        return GetBgMap()->GetGameObject(iter->second);
+
+    // Output log, possible reason is not added GO to map, or not yet loaded;
+    sLog.outError("BattleGround requested gameobject with entry %u, but no gameobject of this entry was created yet, or it was not stored by battleground script for map %u.", entry, GetBgMap()->GetId());
+
+    return nullptr;
+}
+
+/**
+  Function that returns pointer to a loaded Creature that was stored in m_goEntryGuidStore. Can return nullptr
+
+  @param    creature entry
+  @param    skip debug log
+*/
+Creature* BattleGround::GetSingleCreatureFromStorage(uint32 entry, bool skipDebugLog /*=false*/) const
+{
+    auto iter = m_npcEntryGuidStore.find(entry);
+    if (iter != m_npcEntryGuidStore.end())
+        return GetBgMap()->GetCreature(iter->second);
+
+    // Output log, possible reason is not added GO to map, or not yet loaded;
+    if (!skipDebugLog)
+        script_error_log("BattleGround requested creature with entry %u, but no npc of this entry was created yet, or it was not stored by script for map %u.", entry, GetBgMap()->GetId());
+
+    return nullptr;
 }

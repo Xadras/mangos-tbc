@@ -242,7 +242,8 @@ enum BattleGroundJoinError
     BG_JOIN_ERR_GROUP_MEMBER_ALREADY_IN_QUEUE = 6,
     BG_JOIN_ERR_GROUP_DESERTER = 7,
     BG_JOIN_ERR_ALL_QUEUES_USED = 8,
-    BG_JOIN_ERR_GROUP_NOT_ENOUGH = 9
+    BG_JOIN_ERR_GROUP_NOT_ENOUGH = 9,
+    BG_JOIN_ERR_GROUP_IN_ARENA = 10,
 };
 
 /*
@@ -323,8 +324,8 @@ class BattleGround
         uint32 GetMinPlayersPerTeam() const { return m_minPlayersPerTeam; }
 
         int32 GetStartDelayTime() const     { return m_startDelayTime; }
-        ArenaType GetArenaType() const          { return m_arenaType; }
-        Team GetWinner() const              { return m_winner; }
+        ArenaType GetArenaType() const      { return m_arenaType; }
+        BattleGroundWinner GetWinner() const{ return m_winner; }
         uint32 GetBattlemasterEntry() const;
         uint32 GetBonusHonorFromKill(uint32 kills) const;
 
@@ -342,7 +343,7 @@ class BattleGround
         void SetRated(bool state)           { m_isRated = state; }
         void SetArenaType(ArenaType type)   { m_arenaType = type; }
         void SetArenaorBGType(bool isArena) { m_isArena = isArena; }
-        void SetWinner(Team winner)         { m_winner = winner; }
+        void SetWinner(BattleGroundWinner winner) { m_winner = winner; }
 
         void ModifyStartDelayTime(int diff) { m_startDelayTime -= diff; }
         void SetStartDelayTime(int time)    { m_startDelayTime = time; }
@@ -383,6 +384,11 @@ class BattleGround
 
         // Function which starts the battleground
         void StartBattleGround();
+
+        // Functions that handle gameobject storage
+        typedef std::map<uint32, ObjectGuid> EntryGuidMap;
+        GameObject* GetSingleGameObjectFromStorage(uint32 entry) const;
+        Creature* GetSingleCreatureFromStorage(uint32 entry, bool skipDebugLog = false) const;
 
         // Function that set and get battleground map id
         void SetMapId(uint32 mapId) { m_mapId = mapId; }
@@ -459,14 +465,15 @@ class BattleGround
         // Function that blocks movement at the end of the battleground
         static void BlockMovement(Player* /*player*/);
 
-        // Functions that handle messaging
+        // Functions that handle battleground announcements; Used usually when players capture battleground objectives
         void SendMessageToAll(int32 /*entry*/, ChatMsg /*type*/, Player const* source = nullptr);
-        void SendYellToAll(int32 /*entry*/, uint32 /*language*/, ObjectGuid /*guid*/);
+        void SendMessageToAll(int32 /*entry*/, ChatMsg /*type*/, uint32 /*language*/, ObjectGuid /*guid*/);
         void PSendMessageToAll(int32 /*entry*/, ChatMsg /*type*/, Player const* /*source*/, ...);
-
-        // Functions to send messages and yells to all battleground players
         void SendMessage2ToAll(int32 /*entry*/, ChatMsg /*type*/, Player const* /*source*/, int32 arg1 = 0, int32 arg2 = 0);
-        void SendYell2ToAll(int32 /*entry*/, uint32 /*language*/, ObjectGuid /*guid*/, int32 /*arg1*/, int32 /*arg2*/);
+
+        // Functions that handle creature yells in battleground; Used specifically in Alterac Valley
+        void SendYellToAll(int32 /*entry*/, uint32 /*language*/, Creature const* /*source*/);
+        void SendYell2ToAll(int32 /*entry*/, uint32 /*language*/, Creature const* /*source*/, int32 /*arg1*/, int32 /*arg2*/);
 
         // Handle raid groups
         Group* GetBgRaid(Team team) const { return m_bgRaids[GetTeamIndexByTeamId(team)]; }
@@ -506,6 +513,9 @@ class BattleGround
         // handle event sent from gameobjects
         virtual bool HandleEvent(uint32 /*eventId*/, GameObject* /*go*/, Unit* /*invoker*/) { return false; }
 
+        // Called when a creature is created
+        virtual void HandleCreatureCreate(Creature* /*creature*/) {}
+
         // Called when a gameobject is created
         virtual void HandleGameObjectCreate(GameObject* /*go*/) {}
 
@@ -518,9 +528,6 @@ class BattleGround
         // Called when player logs in / out
         void EventPlayerLoggedIn(Player* /*player*/);
         void EventPlayerLoggedOut(Player* /*player*/);
-
-        // Called when required
-        virtual WorldSafeLocsEntry const* GetClosestGraveYard(Player* /*player*/);
 
         // Called when player joins the battleground after the initial load
         virtual void AddPlayer(Player* /*player*/);                     // must be implemented in BG subclass
@@ -628,13 +635,17 @@ class BattleGround
 
         bool   m_buffChange;
 
+        /* Storage lists */
+        EntryGuidMap m_goEntryGuidStore;                   // Store unique GO-Guids by entry
+        EntryGuidMap m_npcEntryGuidStore;                  // Store unique NPC-Guids by entry
+
     private:
         /* Battleground */
         BattleGroundTypeId m_typeId;
         BattleGroundStatus m_status;
         BattleGroundBracketId m_bracketId;
         ArenaType  m_arenaType;                             // 2=2v2, 3=3v3, 5=5v5
-        Team   m_winner;
+        BattleGroundWinner m_winner;
 
         uint32 m_clientInstanceId;                          // the instance-id which is sent to the client and without any other internal use
         uint32 m_startTime;

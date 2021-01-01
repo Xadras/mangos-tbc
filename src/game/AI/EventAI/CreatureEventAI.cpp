@@ -101,6 +101,7 @@ CreatureEventAI::CreatureEventAI(Creature* creature) : CreatureAI(creature),
     m_throwAIEventMask(0),
     m_throwAIEventStep(0),
     m_LastSpellMaxRange(0),
+    m_despawnAggregationMask(0),
     m_rangedMode(false),
     m_rangedModeSetting(TYPE_NONE),
     m_chaseDistance(0.f),
@@ -109,8 +110,8 @@ CreatureEventAI::CreatureEventAI(Creature* creature) : CreatureAI(creature),
     m_mainSpellCost(0),
     m_mainSpellInfo(nullptr),
     m_mainSpellMinRange(0.f),
-    m_defaultMovement(IDLE_MOTION_TYPE),
-    m_mainAttackMask(SPELL_SCHOOL_MASK_NONE)
+    m_mainAttackMask(SPELL_SCHOOL_MASK_NONE),
+    m_defaultMovement(IDLE_MOTION_TYPE)
 {
     InitAI();
 }
@@ -380,9 +381,14 @@ bool CreatureEventAI::CheckEvent(CreatureEventAIHolder& holder, Unit* actionInvo
             break;
         case EVENT_T_DEATH:
             if (event.death.conditionId)
+            {
+                if (!actionInvoker)
+                    return false;
+
                 if (Player* player = actionInvoker->GetBeneficiaryPlayer())
                     if (!sObjectMgr.IsConditionSatisfied(event.death.conditionId, player, player->GetMap(), m_creature, CONDITION_FROM_EVENTAI))
                         return false;
+            }
             break;
         case EVENT_T_EVADE:
             break;
@@ -815,6 +821,10 @@ bool CreatureEventAI::ProcessAction(CreatureEventAI_Action const& action, uint32
                     selectFlags = SELECT_FLAG_IN_LOS;
                 if (action.cast.castFlags & CAST_PLAYER_ONLY)
                     selectFlags |= SELECT_FLAG_PLAYER;
+                if (action.cast.castFlags & CAST_AURA_NOT_PRESENT)
+                    selectFlags |= SELECT_FLAG_NOT_AURA;
+                if (action.cast.castFlags & CAST_TARGET_CASTING)
+                    selectFlags |= SELECT_FLAG_PLAYER_CASTING;
             }
 
             Unit* target = GetTargetByType(action.cast.target, actionInvoker, AIEventSender, eventTarget, failedTargetSelection, spellId, selectFlags);
@@ -962,7 +972,10 @@ bool CreatureEventAI::ProcessAction(CreatureEventAI_Action const& action, uint32
             break;
         }
         case ACTION_T_EVADE:
-            EnterEvadeMode();
+            if (action.evade.combatOnly)
+                m_creature->CombatStopWithPets(true);
+            else
+                EnterEvadeMode();
             break;
         case ACTION_T_FLEE_FOR_ASSIST:
             if (!DoFlee())
@@ -1209,9 +1222,9 @@ bool CreatureEventAI::ProcessAction(CreatureEventAI_Action const& action, uint32
         case ACTION_T_PAUSE_WAYPOINTS:
         {
             if (action.pauseWaypoint.doPause)
-                m_creature->addUnitState(UNIT_STAT_WAYPOINT_PAUSED);
+                m_creature->GetMotionMaster()->PauseWaypoints(0);
             else
-                m_creature->clearUnitState(UNIT_STAT_WAYPOINT_PAUSED);
+                m_creature->GetMotionMaster()->UnpauseWaypoints();
             break;
         }
         case ACTION_T_INTERRUPT_SPELL:
@@ -1338,6 +1351,17 @@ bool CreatureEventAI::ProcessAction(CreatureEventAI_Action const& action, uint32
             SetRootSelf(action.immobilizedState.apply, action.immobilizedState.combatOnly);
             break;
         }
+        case ACTION_T_SET_DESPAWN_AGGREGATION:
+        {
+            m_despawnAggregationMask = action.despawnAggregation.mask;
+            if ((action.despawnAggregation.mask & AGGREGATION_ENABLED) == 0)
+                m_despawnGuids.clear();
+            if (action.despawnAggregation.entry)
+                m_entriesForDespawn.insert(action.despawnAggregation.entry);
+            if (action.despawnAggregation.entry2)
+                m_entriesForDespawn.insert(action.despawnAggregation.entry2);
+            break;
+        }
         default:
             sLog.outError("%s::ProcessAction(): action(%u) not implemented", GetAIName().data(), static_cast<uint32>(action.type));
             return false;
@@ -1348,6 +1372,10 @@ bool CreatureEventAI::ProcessAction(CreatureEventAI_Action const& action, uint32
 
 void CreatureEventAI::JustRespawned()                       // NOTE that this is called from the AI's constructor as well
 {
+    if (m_creature->IsNoAggroOnSight())
+        SetReactState(REACT_DEFENSIVE);
+    else
+        SetReactState(REACT_AGGRESSIVE);
     m_EventUpdateTime = EVENT_UPDATE_TIME;
     m_EventDiff = 0;
     m_throwAIEventStep = 0;
@@ -1441,6 +1469,9 @@ void CreatureEventAI::EnterEvadeMode()
             CheckAndReadyEventForExecution(i);
     }
     ProcessEvents();
+
+    if ((m_despawnAggregationMask & AGGREGATION_EVADE) != 0)
+        DespawnGuids(m_despawnGuids);
 }
 
 void CreatureEventAI::JustDied(Unit* killer)
@@ -1461,6 +1492,9 @@ void CreatureEventAI::JustDied(Unit* killer)
 
     // reset phase after any death state events
     m_Phase = 0;
+
+    if ((m_despawnAggregationMask & AGGREGATION_DEATH) != 0)
+        DespawnGuids(m_despawnGuids);
 }
 
 void CreatureEventAI::KilledUnit(Unit* victim)
@@ -1483,6 +1517,9 @@ void CreatureEventAI::JustSummoned(Creature* summoned)
             CheckAndReadyEventForExecution(i, summoned);
     }
     ProcessEvents(summoned);
+    if ((m_despawnAggregationMask & AGGREGATION_ENABLED) != 0)
+        if (m_entriesForDespawn.empty() || m_entriesForDespawn.find(summoned->GetEntry()) != m_entriesForDespawn.end())
+            m_despawnGuids.push_back(summoned->GetObjectGuid());
 }
 
 void CreatureEventAI::SummonedCreatureJustDied(Creature* summoned)
@@ -1540,6 +1577,9 @@ void CreatureEventAI::EnterCombat(Unit* enemy)
                     i.enabled = true;
                 break;
             // Reset some special combat timers using repeatMin/Max
+            case EVENT_T_FRIENDLY_HP:
+            case EVENT_T_FRIENDLY_IS_CC:
+            case EVENT_T_FRIENDLY_MISSING_BUFF:
             case EVENT_T_SELECT_ATTACKING_TARGET:
                 if (i.UpdateRepeatTimer(m_creature, event.timer.repeatMin, event.timer.repeatMax))
                     i.enabled = true;
