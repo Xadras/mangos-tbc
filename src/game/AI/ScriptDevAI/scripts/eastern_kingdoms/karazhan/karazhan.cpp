@@ -215,12 +215,16 @@ void instance_karazhan::OnObjectCreate(GameObject* pGo)
 void instance_karazhan::OnCreatureRespawn(Creature* creature)
 {
     if (creature->GetEntry() == NPC_BLIZZARD)
+    {
         creature->AI()->SetReactState(REACT_PASSIVE);
+    }
     else if (creature->GetEntry() == NPC_INFERNAL)
+    {
         if (GetData(TYPE_MALCHEZZAR) == IN_PROGRESS)
             return;
         else
             creature->ForcedDespawn(1);
+    }
 }
 
 void instance_karazhan::SetData(uint32 uiType, uint32 uiData)
@@ -283,9 +287,7 @@ void instance_karazhan::SetData(uint32 uiType, uint32 uiData)
         case TYPE_CHESS:
             if (uiData == DONE)
             {
-                Player* creditedPlayer = GetPlayerInMap(true, false);
-                if (instance->IsRaidOrHeroicDungeon() && creditedPlayer)
-                    static_cast<DungeonMap*>(instance)->PermBindAllPlayers(creditedPlayer);
+                static_cast<DungeonMap*>(instance)->PermBindAllPlayers();
                 DoFinishChessEvent();
             }
             else if (uiData == FAIL)
@@ -644,6 +646,9 @@ void instance_karazhan::DoFinishChessEvent()
         DoUseDoorOrButton(GO_GAMESMANS_HALL_EXIT_DOOR);
         DoRespawnGameObject(GO_DUST_COVERED_CHEST, DAY);
         DoToggleGameObjectFlags(GO_DUST_COVERED_CHEST, GO_FLAG_NO_INTERACT, false);
+        if (GameObject* chest = GetSingleGameObjectFromStorage(GO_DUST_COVERED_CHEST))
+            if (Player* player = GetPlayerInMap(false, false))
+                chest->GenerateLootFor(player);
     }
 
     // cast game end spells

@@ -29,6 +29,7 @@ EndContentData */
 
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "AI/ScriptDevAI/base/escort_ai.h"
+#include "AI/ScriptDevAI/scripts/kalimdor/world_kalimdor.h"
 
 /*######
 ## npc_aged_dying_ancient_kodo
@@ -51,7 +52,9 @@ enum
     SPELL_KODO_KOMBO_ITEM           = 18153,
     SPELL_KODO_KOMBO_PLAYER_BUFF    = 18172,                // spells here have unclear function, but using them at least for visual parts and checks
     SPELL_KODO_KOMBO_DESPAWN_BUFF   = 18377,
-    SPELL_KODO_KOMBO_GOSSIP         = 18362
+    SPELL_KODO_KOMBO_GOSSIP         = 18362,
+    SPELL_KODO_KOMBOBULATOR         = 18793,                // spell only exists in classic dbc, used by kodo on player after gossip menu is used
+    SPELL_KODO_DESPAWN              = 22970,                // spell only exists in classic dbc, used by kodo during following?
 };
 
 struct npc_aged_dying_ancient_kodoAI : public ScriptedAI
@@ -91,6 +94,7 @@ struct npc_aged_dying_ancient_kodoAI : public ScriptedAI
     {
         if (pSpell->Id == SPELL_KODO_KOMBO_GOSSIP)
         {
+            m_creature->GetMotionMaster()->MoveIdle();
             m_creature->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
             m_uiDespawnTimer = 60000;
         }
@@ -161,10 +165,11 @@ bool GossipHello_npc_aged_dying_ancient_kodo(Player* pPlayer, Creature* pCreatur
         pPlayer->TalkedToCreature(pCreature->GetEntry(), pCreature->GetObjectGuid());
 
         pPlayer->RemoveAurasDueToSpell(SPELL_KODO_KOMBO_PLAYER_BUFF);
-        pCreature->GetMotionMaster()->MoveIdle();
+        pCreature->ForcedDespawn(10000);
     }
 
-    pPlayer->SEND_GOSSIP_MENU(pPlayer->GetGossipTextId(pCreature), pCreature->GetObjectGuid());
+    pPlayer->PrepareGossipMenu(pCreature, pPlayer->GetDefaultGossipMenuForSource(pCreature));
+    pPlayer->SendPreparedGossip(pCreature);
     return true;
 }
 
@@ -237,11 +242,15 @@ enum
     SAY_MELIZZA_2               = -1000787,
     SAY_MELIZZA_3               = -1000788,
 
+    SAY_HORNIZZ_1               = -1010030,
+    SAY_HORNIZZ_2               = -1010031,
+
     NPC_MARAUDINE_MARAUDER      = 4659,
     NPC_MARAUDINE_BONEPAW       = 4660,
     NPC_MARAUDINE_WRANGLER      = 4655,
 
     NPC_MELIZZA                 = 12277,
+    // NPC_HORNIZZ                 = 6019,
 
     POINT_ID_QUEST_COMPLETE     = 1,
     POINT_ID_EVENT_COMPLETE     = 2,
@@ -258,7 +267,9 @@ static const DialogueEntry aIntroDialogue[] =
     {SAY_MELIZZA_1,             NPC_MELIZZA,    4000},
     {SAY_MELIZZA_2,             NPC_MELIZZA,    5000},
     {SAY_MELIZZA_3,             NPC_MELIZZA,    4000},
-    {NPC_MELIZZA,               0,              0},
+    {NPC_MELIZZA,               0,              6000},
+    {SAY_HORNIZZ_1,             NPC_HORNIZZ,    10000},
+    {SAY_HORNIZZ_2,             NPC_HORNIZZ,    0},
     {0, 0, 0},
 };
 
@@ -295,6 +306,10 @@ struct npc_melizza_brimbuzzleAI : public npc_escortAI, private DialogueHelper
     {
         if (uiEntry == NPC_MELIZZA)
             return m_creature;
+
+        if (uiEntry == NPC_HORNIZZ)
+            if (ScriptedInstance* instance = static_cast<ScriptedInstance*>(m_creature->GetInstanceData()))
+                return instance->GetSingleCreatureFromStorage(NPC_HORNIZZ);
 
         return nullptr;
     }

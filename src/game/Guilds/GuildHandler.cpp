@@ -176,6 +176,9 @@ void WorldSession::HandleGuildRemoveOpcode(WorldPacket& recvPacket)
         return;
     }
 
+    // Put record into guild log
+    guild->LogGuildEvent(GUILD_EVENT_LOG_UNINVITE_PLAYER, GetPlayer()->GetObjectGuid(), slot->guid);
+
     // possible last member removed, do cleanup, and no need events
     if (guild->DelMember(slot->guid))
     {
@@ -183,9 +186,6 @@ void WorldSession::HandleGuildRemoveOpcode(WorldPacket& recvPacket)
         delete guild;
         return;
     }
-
-    // Put record into guild log
-    guild->LogGuildEvent(GUILD_EVENT_LOG_UNINVITE_PLAYER, GetPlayer()->GetObjectGuid(), slot->guid);
 
     guild->BroadcastEvent(GE_REMOVED, plName.c_str(), _player->GetName());
 }
@@ -215,6 +215,23 @@ void WorldSession::HandleGuildAcceptOpcode(WorldPacket& /*recvPacket*/)
 void WorldSession::HandleGuildDeclineOpcode(WorldPacket& /*recvPacket*/)
 {
     DEBUG_LOG("WORLD: Received opcode CMSG_GUILD_DECLINE");
+
+    if (_player->GetGuildIdInvited() != 0)
+    {
+        if (Guild* guild = sGuildMgr.GetGuildById(_player->GetGuildIdInvited()))
+        {
+            ObjectGuid inviterGuid = guild->GetGuildInviter(_player->GetObjectGuid());
+            if (!inviterGuid.IsEmpty())
+            {
+                if (Player const* pInviter = ObjectAccessor::FindPlayer(inviterGuid))
+                {
+                    WorldPacket data(SMSG_GUILD_DECLINE);
+                    data << _player->GetName();
+                    pInviter->GetSession()->SendPacket(data);
+                }
+            }
+        }
+    }
 
     GetPlayer()->SetGuildIdInvited(0);
     GetPlayer()->SetInGuild(0);

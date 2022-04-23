@@ -114,7 +114,7 @@ bool AreaTrigger_at_shadowforge_bridge(Player* pPlayer, AreaTriggerEntry const* 
 {
     if (instance_blackrock_depths* pInstance = (instance_blackrock_depths*)pPlayer->GetInstanceData())
     {
-        if (pPlayer->isGameMaster() || !pPlayer->IsAlive() || pInstance->GetData(TYPE_BRIDGE) == DONE)
+        if (pPlayer->IsGameMaster() || !pPlayer->IsAlive() || pInstance->GetData(TYPE_BRIDGE) == DONE)
             return false;
 
         Creature* pPyromancer = pInstance->GetSingleCreatureFromStorage(NPC_LOREGRAIN);
@@ -199,7 +199,7 @@ static const uint32 aRingMob[2][6] =
 };
 static const uint32 aRingBoss[] = {NPC_GOROSH, NPC_GRIZZLE, NPC_EVISCERATOR, NPC_OKTHOR, NPC_ANUBSHIAH, NPC_HEDRUM};
 
-enum Phases
+enum RingOfLawPhases
 {
     PHASE_MOBS                      = 0,
     PHASE_BOSS                      = 2,
@@ -213,7 +213,7 @@ bool AreaTrigger_at_ring_of_law(Player* pPlayer, AreaTriggerEntry const* pAt)
         if (pInstance->GetData(TYPE_RING_OF_LAW) == IN_PROGRESS || pInstance->GetData(TYPE_RING_OF_LAW) == DONE || pInstance->GetData(TYPE_RING_OF_LAW) == SPECIAL)
             return false;
 
-        if (pPlayer->isGameMaster())
+        if (pPlayer->IsGameMaster())
             return false;
 
         pInstance->SetData(TYPE_RING_OF_LAW, pInstance->GetData(TYPE_RING_OF_LAW) == DATA_BANNER_BEFORE_EVENT ? SPECIAL : IN_PROGRESS);
@@ -259,7 +259,7 @@ struct npc_grimstoneAI : public npc_escortAI
     uint8 m_uiMobSpawnId;
     uint8 m_uiAliveSummonedMob;
 
-    Phases m_uiPhase;
+    RingOfLawPhases m_uiPhase;
 
     uint32 m_uiGladiatorId[MAX_THELDREN_ADDS];
 
@@ -268,7 +268,7 @@ struct npc_grimstoneAI : public npc_escortAI
 
     void Reset() override
     {
-        m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+        m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
 
         m_uiEventTimer        = 1000;
         m_uiEventPhase        = 0;

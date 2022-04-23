@@ -120,11 +120,11 @@ void BattleGroundWS::StartingEventOpenDoors()
     SpawnEvent(WS_EVENT_FLAG_A, 0, true);
     SpawnEvent(WS_EVENT_FLAG_H, 0, true);
 
-    // setup graveyard
-    sObjectMgr.SetGraveYardLinkTeam(WS_GRAVEYARD_MAIN_ALLIANCE,     BG_WS_ZONE_ID_MAIN, ALLIANCE);
-    sObjectMgr.SetGraveYardLinkTeam(WS_GRAVEYARD_MAIN_HORDE,        BG_WS_ZONE_ID_MAIN, HORDE);
-    sObjectMgr.SetGraveYardLinkTeam(WS_GRAVEYARD_FLAGROOM_ALLIANCE, BG_WS_ZONE_ID_MAIN, TEAM_INVALID);
-    sObjectMgr.SetGraveYardLinkTeam(WS_GRAVEYARD_FLAGROOM_HORDE,    BG_WS_ZONE_ID_MAIN, TEAM_INVALID);
+    // setup graveyards
+    GetBgMap()->GetGraveyardManager().SetGraveYardLinkTeam(WS_GRAVEYARD_MAIN_ALLIANCE,     BG_WS_ZONE_ID_MAIN, ALLIANCE);
+    GetBgMap()->GetGraveyardManager().SetGraveYardLinkTeam(WS_GRAVEYARD_MAIN_HORDE,        BG_WS_ZONE_ID_MAIN, HORDE);
+    GetBgMap()->GetGraveyardManager().SetGraveYardLinkTeam(WS_GRAVEYARD_FLAGROOM_ALLIANCE, BG_WS_ZONE_ID_MAIN, TEAM_INVALID);
+    GetBgMap()->GetGraveyardManager().SetGraveYardLinkTeam(WS_GRAVEYARD_FLAGROOM_HORDE,    BG_WS_ZONE_ID_MAIN, TEAM_INVALID);
 }
 
 void BattleGroundWS::AddPlayer(Player* player)
@@ -202,7 +202,7 @@ void BattleGroundWS::ProcessPlayerFlagScoreEvent(Player* player)
 
     DEBUG_LOG("BattleGroundWS: Team %u has scored.", player->GetTeam());
 
-    player->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_ENTER_PVP_COMBAT);
+    player->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_PVP_ACTIVE_CANCELS);
 
     Team team = player->GetTeam();
     PvpTeamIndex teamIdx = GetTeamIndexByTeamId(team);
@@ -300,6 +300,13 @@ void BattleGroundWS::HandlePlayerDroppedFlag(Player* player)
     }
 }
 
+bool BattleGroundWS::IsFlagHeldFor45Seconds(Team flagHolderTeam)
+{
+    PvpTeamIndex teamIdx = GetTeamIndexByTeamId(flagHolderTeam);
+    PvpTeamIndex otherTeamIdx = GetOtherTeamIndex(teamIdx);
+    return m_flagPickupFromBaseTime[otherTeamIdx] + std::chrono::seconds(45) < GetBgMap()->GetCurrentClockTime();
+}
+
 // Function that handles the flag pick up from the base
 void BattleGroundWS::ProcessFlagPickUpFromBase(Player* player, Team attackerTeam)
 {
@@ -314,6 +321,7 @@ void BattleGroundWS::ProcessFlagPickUpFromBase(Player* player, Team attackerTeam
     SpawnEvent(otherTeamIdx, 0, false);
     SetFlagCarrier(otherTeamIdx, player->GetObjectGuid());
     m_flagState[otherTeamIdx] = BG_WS_FLAG_STATE_ON_PLAYER;
+    m_flagPickupFromBaseTime[otherTeamIdx] = GetBgMap()->GetCurrentClockTime();
 
     // update world state to show correct flag carrier
     UpdateFlagState(attackerTeam, BG_WS_FLAG_STATE_ON_PLAYER);
@@ -327,7 +335,7 @@ void BattleGroundWS::ProcessFlagPickUpFromBase(Player* player, Team attackerTeam
 
     PlaySoundToAll(wsgFlagData[otherTeamIdx][BG_WS_FLAG_ACTION_PICKEDUP].soundId);
     SendMessageToAll(wsgFlagData[otherTeamIdx][BG_WS_FLAG_ACTION_PICKEDUP].messageId, wsgFlagData[teamIdx][BG_WS_FLAG_ACTION_PICKEDUP].chatType, player);
-    player->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_ENTER_PVP_COMBAT);
+    player->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_PVP_ACTIVE_CANCELS);
 }
 
 // Function that handles the click action on the dropped flag
@@ -388,7 +396,7 @@ void BattleGroundWS::ProcessDroppedFlagActions(Player* player, GameObject* targe
     }
 
     if (actionId != BG_WS_FLAG_ACTION_NONE)
-        player->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_ENTER_PVP_COMBAT);
+        player->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_PVP_ACTIVE_CANCELS);
 }
 
 // Handle flag click event
@@ -410,22 +418,35 @@ void BattleGroundWS::HandlePlayerClickedOnFlag(Player* player, GameObject* goTar
 // Handle player exit
 void BattleGroundWS::RemovePlayer(Player* player, ObjectGuid guid)
 {
-    Team playerTeam = player->GetTeam();
-    PvpTeamIndex playerTeamIndex = GetTeamIndexByTeamId(playerTeam);
-    PvpTeamIndex otherTeamIdx = GetOtherTeamIndex(playerTeamIndex);
-
-    // Clear flag carrier and respawn main flag
-    if (IsFlagPickedUp(otherTeamIdx) && m_flagCarrier[otherTeamIdx] == guid)
+    std::vector<std::pair<Team, PvpTeamIndex>> checkIndex;
+    if (player)
     {
-        if (!player)
-        {
-            sLog.outError("BattleGroundWS: Removing offline player who unexpectendly carries the flag!");
+        Team playerTeam = player->GetTeam();
+        PvpTeamIndex playerTeamIndex = GetTeamIndexByTeamId(playerTeam);
+        PvpTeamIndex otherTeamIdx = GetOtherTeamIndex(playerTeamIndex);
+        checkIndex.emplace_back(playerTeam, otherTeamIdx);
+    }
+    else // if no player, check both
+    {
+        checkIndex.push_back({ HORDE, TEAM_INDEX_ALLIANCE });
+        checkIndex.push_back({ ALLIANCE, TEAM_INDEX_HORDE });
+    }
 
-            ClearFlagCarrier(otherTeamIdx);
-            RespawnFlagAtBase(playerTeam, false);
+    for (auto& data : checkIndex)
+    {
+        // Clear flag carrier and respawn main flag
+        if (IsFlagPickedUp(data.second) && m_flagCarrier[data.second] == guid)
+        {
+            if (!player) // recheck the validity of this, shouldnt flag be dropped when player is logged out?
+            {
+                sLog.outError("BattleGroundWS: Removing offline player who unexpectendly carries the flag!");
+
+                ClearFlagCarrier(data.second);
+                RespawnFlagAtBase(data.first, false);
+            }
+            else
+                HandlePlayerDroppedFlag(player);
         }
-        else
-            HandlePlayerDroppedFlag(player);
     }
 }
 
@@ -525,11 +546,11 @@ void BattleGroundWS::Reset()
     m_brutalAssaultActive = false;
     m_focusedAssaultActive = false;
 
-    // setup graveyard
-    sObjectMgr.SetGraveYardLinkTeam(WS_GRAVEYARD_MAIN_ALLIANCE,     BG_WS_ZONE_ID_MAIN, TEAM_INVALID);
-    sObjectMgr.SetGraveYardLinkTeam(WS_GRAVEYARD_MAIN_HORDE,        BG_WS_ZONE_ID_MAIN, TEAM_INVALID);
-    sObjectMgr.SetGraveYardLinkTeam(WS_GRAVEYARD_FLAGROOM_ALLIANCE, BG_WS_ZONE_ID_MAIN, ALLIANCE);
-    sObjectMgr.SetGraveYardLinkTeam(WS_GRAVEYARD_FLAGROOM_HORDE,    BG_WS_ZONE_ID_MAIN, HORDE);
+    // setup graveyards
+    GetBgMap()->GetGraveyardManager().SetGraveYardLinkTeam(WS_GRAVEYARD_MAIN_ALLIANCE,     BG_WS_ZONE_ID_MAIN, TEAM_INVALID);
+    GetBgMap()->GetGraveyardManager().SetGraveYardLinkTeam(WS_GRAVEYARD_MAIN_HORDE,        BG_WS_ZONE_ID_MAIN, TEAM_INVALID);
+    GetBgMap()->GetGraveyardManager().SetGraveYardLinkTeam(WS_GRAVEYARD_FLAGROOM_ALLIANCE, BG_WS_ZONE_ID_MAIN, ALLIANCE);
+    GetBgMap()->GetGraveyardManager().SetGraveYardLinkTeam(WS_GRAVEYARD_FLAGROOM_HORDE,    BG_WS_ZONE_ID_MAIN, HORDE);
 }
 
 void BattleGroundWS::EndBattleGround(Team winner)

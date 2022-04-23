@@ -22,18 +22,20 @@
 #include "MotionGenerators/PathFinder.h"
 #include "Log.h"
 #include "World/World.h"
-#include "Metric/Metric.h"
 #include "Entities/Transports.h"
-
 #include <Detour/Include/DetourCommon.h>
 #include <Detour/Include/DetourMath.h>
-#include <limits>
 
+#ifdef BUILD_METRICS
+ #include "Metric/Metric.h"
+#endif
+
+#include <limits>
 ////////////////// PathFinder //////////////////
-PathFinder::PathFinder(const Unit* owner) :
+PathFinder::PathFinder(const Unit* owner, bool ignoreNormalization) :
     m_polyLength(0), m_type(PATHFIND_BLANK),
     m_useStraightPath(false), m_forceDestination(false), m_straightLine(false), m_pointPathLimit(MAX_POINT_PATH_LENGTH), // TODO: Fix legitimate long paths
-    m_sourceUnit(owner), m_navMesh(nullptr), m_navMeshQuery(nullptr), m_cachedPoints(m_pointPathLimit * VERTEX_SIZE), m_pathPolyRefs(m_pointPathLimit), m_smoothPathPolyRefs(m_pointPathLimit), m_defaultMapId(m_sourceUnit->GetMapId())
+    m_sourceUnit(owner), m_navMesh(nullptr), m_navMeshQuery(nullptr), m_cachedPoints(m_pointPathLimit * VERTEX_SIZE), m_pathPolyRefs(m_pointPathLimit), m_smoothPathPolyRefs(m_pointPathLimit), m_defaultMapId(m_sourceUnit->GetMapId()), m_ignoreNormalization(ignoreNormalization)
 {
     DEBUG_FILTER_LOG(LOG_FILTER_PATHFINDING, "++ PathFinder::PathInfo for %u \n", m_sourceUnit->GetGUIDLow());
 
@@ -89,6 +91,7 @@ bool PathFinder::calculate(Vector3 const& start, Vector3 const& dest, bool force
     if (!MaNGOS::IsValidMapCoord(start.x, start.y, start.z))
         return false;
 
+#ifdef BUILD_METRICS
     metric::duration<std::chrono::microseconds> meas("pathfinder.calculate", {
         { "entry", std::to_string(m_sourceUnit->GetEntry()) },
         { "guid", std::to_string(m_sourceUnit->GetGUIDLow()) },
@@ -96,6 +99,7 @@ bool PathFinder::calculate(Vector3 const& start, Vector3 const& dest, bool force
         { "map_id", std::to_string(m_sourceUnit->GetMapId()) },
         { "instance_id", std::to_string(m_sourceUnit->GetInstanceId()) }
     }, 1000);
+#endif
 
     //if (GenericTransport* transport = m_sourceUnit->GetTransport())
     //    transport->CalculatePassengerOffset(dest.x, dest.y, dest.z, nullptr);
@@ -133,8 +137,7 @@ dtPolyRef PathFinder::getPathPolyByPosition(const dtPolyRef* polyPath, uint32 po
         return INVALID_POLYREF;
 
     dtPolyRef nearestPoly = INVALID_POLYREF;
-    float minDist2d = std::numeric_limits<float>::max();
-    float minDist3d = 0.0f;
+    float minDist3d = std::numeric_limits<float>::max();
 
     for (uint32 i = 0; i < polyPathSize; ++i)
     {
@@ -142,22 +145,21 @@ dtPolyRef PathFinder::getPathPolyByPosition(const dtPolyRef* polyPath, uint32 po
         if (dtStatusFailed(m_navMeshQuery->closestPointOnPoly(polyPath[i], point, closestPoint, nullptr)))
             continue;
 
-        float d = dtVdist2DSqr(point, closestPoint);
-        if (d < minDist2d)
+        float d = dtVdistSqr(point, closestPoint);
+        if (d < minDist3d)
         {
-            minDist2d = d;
+            minDist3d = d;
             nearestPoly = polyPath[i];
-            minDist3d = dtVdistSqr(point, closestPoint);
         }
 
-        if (minDist2d < 1.0f) // shortcut out - close enough for us
+        if (minDist3d < 1.0f) // shortcut out - close enough for us
             break;
     }
 
     if (distance)
         *distance = dtMathSqrtf(minDist3d);
 
-    return (minDist2d < 3.0f) ? nearestPoly : INVALID_POLYREF;
+    return (minDist3d < 3.0f) ? nearestPoly : INVALID_POLYREF;
 }
 
 dtPolyRef PathFinder::getPolyByLocation(const float* point, float* distance) const
@@ -537,10 +539,14 @@ void PathFinder::BuildPointPath(const float* startPoint, const float* endPoint)
         G3D::Vector3 diffVec = (endVec - startVec);
         G3D::Vector3 prevVec = startVec;
         float len = diffVec.length();
-        diffVec *= SMOOTH_PATH_STEP_SIZE / len;
-        while (len > SMOOTH_PATH_STEP_SIZE)
+        float stepSize = SMOOTH_PATH_STEP_SIZE;
+        // protection against buffer overflow - if too long straight line, smooth path could exceed cachedPoints array
+        if (ceilf(len / SMOOTH_PATH_STEP_SIZE) > m_pointPathLimit - 2)
+            stepSize = len / (m_pointPathLimit - 2);
+        diffVec *= stepSize / len;
+        while (len > stepSize)
         {
-            len -= SMOOTH_PATH_STEP_SIZE;
+            len -= stepSize;
             prevVec += diffVec;
             pathPoints[VERTEX_SIZE * pointCount + 0] = prevVec.x;
             pathPoints[VERTEX_SIZE * pointCount + 1] = prevVec.y;
@@ -667,8 +673,7 @@ void PathFinder::BuildPointPath(const float* startPoint, const float* endPoint)
     setActualEndPosition(m_pathPoints[pointCount - 1]);
 
     // force the given destination, if needed
-    if (m_forceDestination &&
-            (!(m_type & PATHFIND_NORMAL) || !inRange(getEndPosition(), getActualEndPosition(), 1.0f, 1.0f)))
+    if (m_forceDestination && ((m_type & PATHFIND_NORMAL) == 0 || getEndPosition() != getActualEndPosition()))
     {
         // we may want to keep partial subpath
         if (dist3DSqr(getActualEndPosition(), getEndPosition()) < 0.3f * dist3DSqr(getStartPosition(), getEndPosition()))
@@ -692,7 +697,7 @@ void PathFinder::BuildPointPath(const float* startPoint, const float* endPoint)
 
 void PathFinder::NormalizePath()
 {
-    if (!sWorld.getConfig(CONFIG_BOOL_PATH_FIND_NORMALIZE_Z))
+    if (!sWorld.getConfig(CONFIG_BOOL_PATH_FIND_NORMALIZE_Z) || m_ignoreNormalization)
         return;
 
     GenericTransport* transport = m_sourceUnit->GetTransport();
@@ -738,7 +743,7 @@ void PathFinder::createFilter()
 
         // creatures don't take environmental damage
         if (creature->CanSwim())
-            includeFlags |= (NAV_WATER | NAV_MAGMA | NAV_SLIME);           // swim
+            includeFlags |= (NAV_WATER | NAV_MAGMA_SLIME);           // swim
     }
     else if (m_sourceUnit->GetTypeId() == TYPEID_PLAYER)
     {
@@ -767,7 +772,7 @@ void PathFinder::updateFilter()
     }
 }
 
-NavTerrain PathFinder::getNavTerrain(float x, float y, float z) const
+NavTerrainFlag PathFinder::getNavTerrain(float x, float y, float z) const
 {
     GridMapLiquidData data;
     if (m_sourceUnit->GetTerrain()->getLiquidStatus(x, y, z, MAP_ALL_LIQUIDS, &data) == LIQUID_MAP_NO_WATER)
@@ -779,9 +784,8 @@ NavTerrain PathFinder::getNavTerrain(float x, float y, float z) const
         case MAP_LIQUID_TYPE_OCEAN:
             return NAV_WATER;
         case MAP_LIQUID_TYPE_MAGMA:
-            return NAV_MAGMA;
         case MAP_LIQUID_TYPE_SLIME:
-            return NAV_SLIME;
+            return NAV_MAGMA_SLIME;
         default:
             return NAV_GROUND;
     }

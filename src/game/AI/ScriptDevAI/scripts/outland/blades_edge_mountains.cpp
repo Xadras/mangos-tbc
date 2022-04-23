@@ -107,7 +107,7 @@ struct mobs_nether_drakeAI : public ScriptedAI
 
     void MoveInLineOfSight(Unit* pWho) override
     {
-        if (m_creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE))
+        if (m_creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING))
             return;
 
         ScriptedAI::MoveInLineOfSight(pWho);
@@ -131,7 +131,7 @@ struct mobs_nether_drakeAI : public ScriptedAI
             if (m_creature->GetEntry() == NPC_NIHIL)
             {
                 DoScriptText(SAY_NIHIL_INTERRUPT, m_creature);
-                m_creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                m_creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
                 m_bIsNihil = false;
             }
 
@@ -149,7 +149,7 @@ struct mobs_nether_drakeAI : public ScriptedAI
                 if (aNetherDrakeEntries[uiIndex] == NPC_NIHIL)
                 {
                     EnterEvadeMode();
-                    m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                    m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
                     m_bIsNihil = true;
                 }
                 else
@@ -182,7 +182,7 @@ struct mobs_nether_drakeAI : public ScriptedAI
                         m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
                         // take off to location above
                         m_creature->SetLevitate(true);
-                        m_creature->SetByteFlag(UNIT_FIELD_BYTES_1, 3, UNIT_BYTE1_FLAG_FLY_ANIM);
+                        m_creature->SetByteFlag(UNIT_FIELD_BYTES_1, UNIT_BYTES_1_OFFSET_MISC_FLAGS, UNIT_BYTE1_FLAG_FLY_ANIM);
                         m_creature->GetMotionMaster()->MovePoint(1, m_creature->GetPositionX() + 50.0f, m_creature->GetPositionY(), m_creature->GetPositionZ() + 50.0f);
                         break;
                 }
@@ -1627,7 +1627,7 @@ enum
 
 bool AreaTrigger_at_raven_prophecy(Player* pPlayer, AreaTriggerEntry const* pAt)
 {
-    if (/*pPlayer->isGameMaster() ||*/ pPlayer->IsAlive() &&
+    if (/*pPlayer->IsGameMaster() ||*/ pPlayer->IsAlive() &&
                                        pPlayer->HasAura(UNDERSTAND_RAVENSPEECH_AURA) &&
         pPlayer->GetQuestStatus(QUEST_WHISPERS_OF_THE_RAVEN_GOD) == QUEST_STATUS_INCOMPLETE)
     {
@@ -1761,16 +1761,6 @@ struct npc_frequency_scanner : public ScriptedAI
         static_cast<go_aura_generator_000AI*>(go->AI())->m_player = m_creature->GetSpawnerGuid();
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Unit* /*pSender*/, Unit* pInvoker, uint32 /*uiMiscValue*/) override
-    {
-        if (eventType == AI_EVENT_CUSTOM_A)
-        {
-            m_guidWyrm = pInvoker->GetObjectGuid();
-            pInvoker->CastSpell(nullptr, SPELL_SUMMON_SINGING_RIDGE_VOID_STORM, TRIGGERED_NONE);
-            m_uiAttackOwnerTimer = 3000;
-        }
-    }
-
     void UpdateAI(const uint32 uiDiff) override
     {
         if (m_uiOscillationFieldTimer <= uiDiff)
@@ -1780,33 +1770,6 @@ struct npc_frequency_scanner : public ScriptedAI
         }
         else
             m_uiOscillationFieldTimer -= uiDiff;
-
-        if (m_uiAttackOwnerTimer)
-        {
-            if (m_uiAttackOwnerTimer <= uiDiff)
-            {
-                if (m_bAttack)
-                {
-                    m_uiAttackOwnerTimer = 0;
-                    if (Unit* owner = m_creature->GetSpawner())
-                        if (Creature* creature = m_creature->GetMap()->GetCreature(m_guidWyrm))
-                            creature->AI()->AttackStart(owner);
-                }
-                else
-                {
-                    m_uiAttackOwnerTimer = 1000;
-                    m_bAttack = true;
-                    if (Creature* creature = m_creature->GetMap()->GetCreature(m_guidWyrm))
-                    {
-                        creature->SetDisplayId(MODEL_WYRM_FROM_BEYOND);
-                        creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
-                        creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
-                    }
-                }                
-            }
-            else
-                m_uiAttackOwnerTimer -= uiDiff;
-        }        
     }
 };
 
@@ -3090,9 +3053,9 @@ enum FlayerActions
     FLAYER_ACTION_MAX,
 };
 
-struct npc_apexis_flayerAI : public ScriptedAI, public CombatActions
+struct npc_apexis_flayerAI : public ScriptedAI
 {
-    npc_apexis_flayerAI(Creature* creature) : ScriptedAI(creature), CombatActions(FLAYER_ACTION_MAX)
+    npc_apexis_flayerAI(Creature* creature) : ScriptedAI(creature, FLAYER_ACTION_MAX)
     {
         AddCombatAction(FLAYER_ACTION_REND, 0u);
         AddCombatAction(FLAYER_ACTION_SHRED_ARMOR, 0u);
@@ -3330,6 +3293,43 @@ struct go_nether_drake_egg_trapAI : public GameObjectAI
     }
 };
 
+enum
+{
+    SPELL_ZEPHYRIUM_CHARGED = 37108,
+};
+
+struct Soaring : public AuraScript
+{
+    void OnApply(Aura* aura, bool apply) const override
+    {
+        if (!apply)
+            aura->GetTarget()->CastSpell(nullptr, SPELL_ZEPHYRIUM_CHARGED, TRIGGERED_NONE);
+    }
+};
+
+struct CoaxMarmot : public AuraScript
+{
+    void OnApply(Aura* aura, bool apply) const override
+    {
+        if (!apply)
+        {
+            Unit* target = aura->GetTarget();
+            if (target->GetTypeId() != TYPEID_PLAYER)
+                return;
+
+            Player* pPlayer = static_cast<Player*>(target);
+            if (pPlayer->GetMover() != target)
+            {
+                if (Creature* mover = static_cast<Creature*>(pPlayer->GetMover())) // this spell uses DoSummonPossesed so remove this on removal
+                {
+                    pPlayer->BreakCharmOutgoing();
+                    mover->ForcedDespawn();
+                }
+            }
+        }
+    }
+};
+
 void AddSC_blades_edge_mountains()
 {
     Script* pNewScript = new Script;
@@ -3463,4 +3463,6 @@ void AddSC_blades_edge_mountains()
 
     RegisterSpellScript<ExorcismFeather>("spell_exorcism_feather");
     RegisterSpellScript<KoiKoiDeath>("spell_koi_koi_death");
+    RegisterSpellScript<Soaring>("spell_soaring");
+    RegisterSpellScript<CoaxMarmot>("spell_coax_marmot");
 }

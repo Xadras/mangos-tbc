@@ -719,7 +719,8 @@ void WorldSession::SendListInventory(ObjectGuid vendorguid) const
     }
 
     // Stop the npc if moving
-    pCreature->GetMotionMaster()->PauseWaypoints();
+    if (uint32 pauseTimer = pCreature->GetInteractionPauseTimer())
+        pCreature->GetMotionMaster()->PauseWaypoints(pauseTimer);
 
     VendorItemData const* vItems = pCreature->GetVendorItems();
     VendorItemData const* tItems = pCreature->GetVendorTemplateItems();
@@ -757,7 +758,7 @@ void WorldSession::SendListInventory(ObjectGuid vendorguid) const
             ItemPrototype const* pProto = ObjectMgr::GetItemPrototype(itemId);
             if (pProto)
             {
-                if (!_player->isGameMaster())
+                if (!_player->IsGameMaster())
                 {
                     // class wrong item skip only for bindable case
                     if ((pProto->AllowableClass & _player->getClassMask()) == 0 && pProto->Bonding == BIND_WHEN_PICKED_UP)

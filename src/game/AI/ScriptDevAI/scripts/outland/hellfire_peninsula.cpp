@@ -650,7 +650,7 @@ struct npc_colonel_julesAI : public ScriptedAI
 
         if (m_bReturnHome)
         {
-            if (uiPointId == 6)
+            if (uiPointId == 7)
             {
                 m_creature->SetLevitate(false);
                 m_creature->GetMotionMaster()->Clear();
@@ -661,8 +661,8 @@ struct npc_colonel_julesAI : public ScriptedAI
                 EndEvent();
             }
         }
-        else if (uiPointId == 4)
-            m_creature->GetMotionMaster()->SetNextWaypoint(0);
+        else if (uiPointId == 5)
+            m_creature->GetMotionMaster()->SetNextWaypoint(1);
     }
 
     void JustSummoned(Creature* pSummoned) override
@@ -768,7 +768,7 @@ static const DialogueEntry aExorcismDialogue[] =
     {SAY_EXORCISM_5,		    NPC_ANCHORITE_BARADA, 10000},
     {SAY_EXORCISM_6,		    NPC_COLONEL_JULES,	  10000},
     {NPC_ANCHORITE_BARADA,      0,                    10000},
-    {NPC_BUBBLING_SLIMER_BUNNY, 0,					  5000},	// jules moves back 
+    {NPC_BUBBLING_SLIMER_BUNNY, 0,					  5000},	// jules moves back
     {SAY_EXORCISM_7,            NPC_ANCHORITE_BARADA, 3000},	// bara stands, bows
     {NPC_FOUL_PURGE,			0,					  11500},	// bara walks back
     {0, 0, 0}
@@ -793,7 +793,7 @@ struct npc_anchorite_baradaAI : public ScriptedAI, private DialogueHelper
 
     ObjectGuid m_colonelGuid;
     ObjectGuid m_playerGuid;
- 
+
     void Reset() override
     {
         m_bEventComplete = false;
@@ -854,7 +854,7 @@ struct npc_anchorite_baradaAI : public ScriptedAI, private DialogueHelper
 
         switch (uiPointId)
         {
-            case 1:
+            case 2:
                 // pause wp and resume dialogue
                 m_creature->addUnitState(UNIT_STAT_WAYPOINT_PAUSED);
 
@@ -866,7 +866,7 @@ struct npc_anchorite_baradaAI : public ScriptedAI, private DialogueHelper
 
                 StartNextDialogueText(TEXT_ID_POSSESSED);
                 break;
-            case 3:
+            case 4:
                 // event completed - wait for player to get quest credit by gossip
                 if (Creature* pColonel = m_creature->GetMap()->GetCreature(m_colonelGuid))
                     m_creature->SetFacingToObject(pColonel);
@@ -989,7 +989,7 @@ struct npc_anchorite_baradaAI : public ScriptedAI, private DialogueHelper
             bool m_reset = false;
             if (Player* player = m_creature->GetMap()->GetPlayer(m_playerGuid))
                 m_reset = !player->IsActiveQuest(QUEST_ID_EXORCISM);
-            else 
+            else
                 m_reset = true;
 
             if (m_reset)
@@ -1118,9 +1118,9 @@ enum AledisActions // order based on priority
     ALEDIS_ACTION_MAX
 };
 
-struct npc_magister_aledisAI : public RangedCombatAI
+struct npc_magister_aledisAI : public CombatAI
 {
-    npc_magister_aledisAI(Creature* creature) : RangedCombatAI(creature, ALEDIS_ACTION_MAX)
+    npc_magister_aledisAI(Creature* creature) : CombatAI(creature, ALEDIS_ACTION_MAX)
     {
         AddTimerlessCombatAction(ALEDIS_LOW_HP, true);
         AddCombatAction(ALEDIS_ACTION_PYROBLAST, 10000, 14000);
@@ -1131,14 +1131,9 @@ struct npc_magister_aledisAI : public RangedCombatAI
         Reset();
     }
 
-    bool m_bIsDefeated;
-    bool m_bAllyAttacker;
-
     void Reset() override
     {
-        RangedCombatAI::Reset();
-        m_bAllyAttacker = false;
-        m_bIsDefeated = false;
+        CombatAI::Reset();
 
         SetCombatMovement(true);
         SetCombatScriptStatus(false);
@@ -1163,39 +1158,8 @@ struct npc_magister_aledisAI : public RangedCombatAI
 
     void Aggro(Unit* /*who*/)
     {
-        if (m_creature->getFaction() == FACTION_ALLEDIS_HOSTILE)
+        if (m_creature->GetFaction() == FACTION_ALLEDIS_HOSTILE)
             SetDeathPrevention(true);
-    }
-
-    void EvadeReset()
-    {
-        m_bAllyAttacker = false;
-        m_creature->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER);
-    }
-
-    void EnterEvadeMode() override
-    {
-        m_creature->RemoveAllAurasOnEvade();
-        m_creature->CombatStop(true);
-
-        if (!m_bIsDefeated)
-            m_creature->LoadCreatureAddon(true);
-
-        if (m_creature->IsAlive())
-        {
-            if (!m_bIsDefeated)
-            {
-                m_creature->SetWalk(true);
-                m_creature->GetMotionMaster()->MoveWaypoint();
-            }
-            else
-            {
-                m_creature->GetMotionMaster()->MoveIdle();
-                EvadeReset();
-            }
-        }
-
-        m_creature->SetLootRecipient(nullptr);
     }
 
     void ExecuteAction(uint32 action) override
@@ -1204,16 +1168,15 @@ struct npc_magister_aledisAI : public RangedCombatAI
         {
             case ALEDIS_LOW_HP:
             {
-                if (m_creature->GetHealthPercent() > 20.0f || m_creature->getFaction() != FACTION_ALLEDIS_HOSTILE)
+                if (m_creature->GetHealthPercent() > 20.0f || m_creature->GetFaction() != FACTION_ALLEDIS_HOSTILE)
                     return;
 
-                // evade when defeated; faction is reset automatically
-                m_bIsDefeated = true;
                 m_creature->SetFactionTemporary(FACTION_ALLEDIS_FRIENDLY, TEMPFACTION_RESTORE_RESPAWN);
-                EnterEvadeMode();
+                m_creature->CombatStopWithPets(true);
+                m_creature->GetMotionMaster()->MoveIdle();
+                m_creature->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                 m_creature->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER);
                 SetReactState(REACT_PASSIVE);
-
                 DoScriptText(SAY_ALEDIS_DEFEAT, m_creature);
                 m_creature->ForcedDespawn(30000);
                 return;
@@ -1243,144 +1206,179 @@ struct npc_magister_aledisAI : public RangedCombatAI
 
 enum
 {
-    EMOTE_FLARE_UNSTABLE            = -1001214,
-    EMOTE_FLARE_BURST               = -1001215,
+    NPC_LIVING_FLARE            = 24916,
+    NPC_GENERIC_QUEST_TRIGGER_LAB = 24959,
+    NPC_UNSTABLE_LIVING_FLARE   = 24958,
 
-    SPELL_LIVING_COSMETIC           = 44880,                // cosmetic spell
-    SPELL_LIVING_FLARE_MASTER       = 44877,                // dummy aura used to hit the pet
-    SPELL_FEL_FLAREUP               = 44944,                // scale up pet
-    SPELL_LIVING_FLARE_UNSTABLE     = 44943,                // visual to transform
-    SPELL_UNSTABLE_COSMETIC         = 46196,                // cosmetic spell
-    //SPELL_LIVING_FLARE_DETONATOR  = 44948,                // possible used check for the generic quest trigger; needs more research
-    SPELL_COSMETIC_EXPLOSION        = 46225,                // ToDo: confirm spell
-    SPELL_QUEST_CREDIT              = 44947,                // quest complete spell
+    GO_LARGE_FIRE               = 187084,
 
-    NPC_UNSTABLE_LIVING_FLARE       = 24958,
-    NPC_GENERIC_QUEST_TRIGGER       = 24959,                // dummy npc used to check for the gate
-    GO_LARGE_FIRE                   = 187084,
+    SPELL_LIVING_FLARE_MASTER   = 44877,
+    SPELL_FEL_FLAREUP           = 44944,
+    SPELL_TRANSFORM             = 44943,
+    SPELL_QUEST_CREDIT          = 44947,
+    SPELL_DETONATOR             = 44948,
+    SPELL_LIVING_COSMETIC       = 44880,
+    SPELL_UNSTABLE_COSMETIC     = 46196,
+    SPELL_HUGE_EXPLOSION_TEST   = 46225,
 
-    MAX_FLAREUP_STACKS              = 8,
+    EMOTE_LIVING_FLARE          = -1001214,
+    EMOTE_UNSTABLE_FLARE        = -1001215,
 };
 
 struct npc_living_flareAI : public ScriptedPetAI
 {
-    npc_living_flareAI(Creature* pCreature) : ScriptedPetAI(pCreature) { Reset(); }
+    npc_living_flareAI(Creature* pCreature) : ScriptedPetAI(pCreature), m_uiStacks(0)
+    {
+        Reset();
+    }
 
-    bool m_bCheckComplete;
+    uint32 m_uiStacks;
     uint32 m_uiCheckTimer;
+    bool m_uiFollow;
+    uint32 m_uiExplosionTimer;
+    ObjectGuid m_uiQuestCreditGuid;
 
     void Reset() override
     {
-        m_uiCheckTimer      = 0;
-        m_bCheckComplete    = false;
-
-        DoCastSpellIfCan(m_creature, SPELL_LIVING_COSMETIC);
+        m_uiCheckTimer = 0;
+        m_uiFollow = true;
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Unit* /*pSender*/, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
+    void JustRespawned() override
     {
-        if (eventType == AI_EVENT_CUSTOM_A)
+        m_creature->CastSpell(nullptr, SPELL_LIVING_COSMETIC, TRIGGERED_OLD_TRIGGERED);
+        SetReactState(REACT_PASSIVE);
+    }
+
+    void SpellHit(Unit* /*caster*/, const SpellEntry* spellInfo) override
+    {
+        if (spellInfo->Id == SPELL_FEL_FLAREUP) // handle morph here instead of spellEffects so we can do script text
         {
-            DoScriptText(EMOTE_FLARE_UNSTABLE, m_creature);
-            m_creature->RemoveAurasDueToSpell(SPELL_LIVING_COSMETIC);
-            // Note: on updateEntry the scale of the object should be persistent; requires core fix
-            m_creature->UpdateEntry(NPC_UNSTABLE_LIVING_FLARE);
-            DoCastSpellIfCan(m_creature, SPELL_LIVING_FLARE_UNSTABLE, CAST_TRIGGERED);
-            DoCastSpellIfCan(m_creature, SPELL_UNSTABLE_COSMETIC, CAST_TRIGGERED);
-            m_uiCheckTimer = 1000;
+            m_uiStacks++;
+            if (m_uiStacks == 8)
+            {
+                m_creature->CastSpell(nullptr, SPELL_TRANSFORM, TRIGGERED_OLD_TRIGGERED);
+                DoScriptText(EMOTE_LIVING_FLARE, m_creature);
+                m_uiCheckTimer = 1000;
+            }
         }
     }
 
     void MovementInform(uint32 /*uiMovementType*/, uint32 uiPointId) override
     {
-        if (!uiPointId)
-            return;
-
-        DoCastSpellIfCan(m_creature, SPELL_QUEST_CREDIT, CAST_TRIGGERED);
-        DoCastSpellIfCan(m_creature, SPELL_COSMETIC_EXPLOSION, CAST_TRIGGERED);
-        DoScriptText(EMOTE_FLARE_BURST, m_creature);
-        m_creature->ForcedDespawn(2000);
-
-        // respawn all fires in range
-        std::list<GameObject*> lFiresInRange;
-        GetGameObjectListWithEntryInGrid(lFiresInRange, m_creature, GO_LARGE_FIRE, 50.0f);
-
-        if (lFiresInRange.empty())
-            return;
-
-        for (std::list<GameObject*>::const_iterator itr = lFiresInRange.begin(); itr != lFiresInRange.end(); ++itr)
+        if (uiPointId == 1)
         {
-            (*itr)->SetRespawnTime(60);
-            (*itr)->Refresh();
+            m_uiExplosionTimer = 4000;
+            m_creature->CastSpell(nullptr, SPELL_QUEST_CREDIT, TRIGGERED_OLD_TRIGGERED); // is cast at pet owner
+            DoScriptText(EMOTE_UNSTABLE_FLARE, m_creature);
+            if (Creature* questTrigger = GetClosestCreatureWithEntry(m_creature, NPC_GENERIC_QUEST_TRIGGER_LAB, 100.0f))
+                questTrigger->CastSpell(questTrigger, SPELL_DETONATOR, TRIGGERED_OLD_TRIGGERED);
+            m_creature->RemoveAurasDueToSpell(SPELL_UNSTABLE_COSMETIC);
         }
     }
 
-    // Custom function to check for the Generic quest trigger
-    bool DoCheckQuestTrigger()
+    void CheckPortalDist()
     {
-        // ToDo: check if we should use the spell to check for the detonator
-        if (Creature* pCredit = GetClosestCreatureWithEntry(m_creature, NPC_GENERIC_QUEST_TRIGGER, 30.0f))
+        if (Creature* questCredit = GetClosestCreatureWithEntry(m_creature, NPC_GENERIC_QUEST_TRIGGER_LAB, 50.f)) // if within distance of portal, initiate final sequence
         {
-            m_bCheckComplete = true;
-            m_creature->SetWalk(true);
-            m_creature->GetMotionMaster()->Clear();
-            m_creature->GetMotionMaster()->MovePoint(1, pCredit->GetPositionX(), pCredit->GetPositionY(), pCredit->GetPositionZ());
-
-            return true;
+            m_uiCheckTimer = 0;
+            m_uiFollow = false;
+            m_creature->GetMotionMaster()->MovePoint(1, 831.892f, 2511.94f, 292.0167f);
+            m_uiQuestCreditGuid = questCredit->GetObjectGuid();
         }
-
-        return false;
+        else
+            m_uiCheckTimer = 1000;
     }
 
-    void UpdateAI(const uint32 uiDiff) override
-    {
-        if (!m_bCheckComplete)
-            ScriptedPetAI::UpdateAI(uiDiff);
-    }
-
-    void UpdatePetOOCAI(const uint32 uiDiff) override
+    void UpdatePetAI(const uint32 uiDiff) override
     {
         if (m_uiCheckTimer)
         {
             if (m_uiCheckTimer <= uiDiff)
-            {
-                if (DoCheckQuestTrigger())
-                    m_uiCheckTimer = 0;
-                else
-                    m_uiCheckTimer = 1000;
-            }
+                CheckPortalDist();
             else
                 m_uiCheckTimer -= uiDiff;
         }
     }
-};
 
-UnitAI* GetAI_npc_living_flare(Creature* pCreature)
-{
-    return new npc_living_flareAI(pCreature);
-}
-
-bool EffectAuraDummy_spell_aura_dummy_living_flare(const Aura* pAura, bool bApply)
-{
-    if (pAura->GetId() == SPELL_LIVING_FLARE_MASTER && pAura->GetEffIndex() == EFFECT_INDEX_0 && bApply)
+    void UpdateAI(const uint32 uiDiff) override
     {
-        if (Creature* pTarget = (Creature*)pAura->GetTarget())
+        if (m_uiFollow)
         {
-            pTarget->CastSpell(pTarget, SPELL_FEL_FLAREUP, TRIGGERED_OLD_TRIGGERED);
+            Unit* pOwner = m_creature->GetMaster();
 
-            SpellAuraHolder* pHolder = pTarget->GetSpellAuraHolder(SPELL_FEL_FLAREUP);
-            if (pHolder)
+            if (!pOwner)
+                return;
+
+            if (m_creature->GetCharmInfo()->HasCommandState(COMMAND_FOLLOW))
             {
-                if (pHolder->GetStackAmount() >= MAX_FLAREUP_STACKS)
-                    pTarget->AI()->SendAIEvent(AI_EVENT_CUSTOM_A, pTarget, pTarget);
-                // Note: cosmetic aura is removed, so we need to add it back. This needs to be fixed
-                else
-                    pTarget->CastSpell(pTarget, SPELL_LIVING_COSMETIC, TRIGGERED_OLD_TRIGGERED);
+                // not following, so start follow
+                if (!m_creature->hasUnitState(UNIT_STAT_FOLLOW))
+                    m_creature->GetMotionMaster()->MoveFollow(pOwner, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE);
+
+                // update when not in combat
+                UpdatePetAI(uiDiff);
             }
         }
+        if (m_uiExplosionTimer)
+        {
+            if (m_uiExplosionTimer <= uiDiff)
+            {
+                m_uiExplosionTimer = 0;
+                Unit* master = m_creature->GetMaster();
+                if (master && master->GetTypeId() == TYPEID_PLAYER)
+                {
+                    m_creature->ForcedDespawn();
+                    ((Player*)master)->RemoveMiniPet();
+                }
+            }
+            else
+                m_uiExplosionTimer -= uiDiff;
+        }
     }
-    return true;
-}
+};
+
+struct LivingFlareDetonator : public SpellScript
+{
+    void OnEffectExecute(Spell* spell, SpellEffectIndex /*effIdx*/) const override
+    {
+        if (Unit* target = spell->GetUnitTarget())
+            target->CastSpell(nullptr, SPELL_HUGE_EXPLOSION_TEST, TRIGGERED_OLD_TRIGGERED);
+        GameObjectList objectList;
+        GetGameObjectListWithEntryInGrid(objectList, spell->GetCaster(), GO_LARGE_FIRE, 30.f);
+        for (auto* flame : objectList)
+        {
+            flame->SetLootState(GO_READY);
+            flame->SetRespawnTime(60);           // despawn object in 60 seconds
+            flame->Refresh();
+        }
+    }
+};
+
+struct LivingFlareMaster : public AuraScript
+{
+    void OnApply(Aura* aura, bool apply) const override
+    {
+        if (apply)
+            if (aura->GetTarget()->GetAuraCount(SPELL_FEL_FLAREUP) < 8)
+                aura->GetTarget()->CastSpell(nullptr, SPELL_FEL_FLAREUP, TRIGGERED_OLD_TRIGGERED);
+    }
+};
+
+struct LivingFlareUnstable : public AuraScript
+{
+    void OnApply(Aura* aura, bool apply) const override
+    {
+        if (apply)
+        {
+            Unit* target = aura->GetTarget();
+            if (target->IsCreature())
+                static_cast<Creature*>(target)->UpdateEntry(NPC_UNSTABLE_LIVING_FLARE);
+            target->RemoveAurasDueToSpell(SPELL_LIVING_COSMETIC);
+            target->CastSpell(nullptr, SPELL_UNSTABLE_COSMETIC, TRIGGERED_OLD_TRIGGERED);
+        }
+    }
+};
 
 enum
 {
@@ -1458,7 +1456,7 @@ struct npc_danath_trollbaneAI : public ScriptedAI
                 m_uiYell2DelayRemaining -= uiDiff;
         }
 
-        DoMeleeAttackIfReady(); // be sure to fight back if in combat
+        ScriptedAI::UpdateAI(uiDiff);
     }
 
     void ReceiveAIEvent(AIEventType eventType, Unit* pSender, Unit* pInvoker, uint32 /*miscValue*/) override
@@ -1474,15 +1472,16 @@ struct npc_danath_trollbaneAI : public ScriptedAI
     }
 };
 
-bool QuestComplete_npc_trollbane(Player* pPlayer, Creature* pCreature, const Quest* pQuest)
+bool QuestComplete_npc_trollbane(Player* player, Creature* creature, const Quest* quest)
 {
-    if (pQuest->GetQuestId() == QUEST_FALL_OF_MAGETHERIDON_A)
+    if (quest->GetQuestId() == QUEST_FALL_OF_MAGETHERIDON_A)
     {
         // And trigger yelling
-        pCreature->AI()->SendAIEvent(AI_EVENT_START_EVENT, pPlayer, pCreature);
+        creature->AI()->SendAIEvent(AI_EVENT_START_EVENT, player, creature);
+        return true;
     }
 
-    return true;
+    return false;
 }
 
 UnitAI* GetAI_danath_trollbane(Creature* pCreature)
@@ -1541,7 +1540,7 @@ struct npc_nazgrelAI : public ScriptedAI
                 m_uiYell2DelayRemaining -= uiDiff;
         }
 
-        DoMeleeAttackIfReady();
+        ScriptedAI::UpdateAI(uiDiff);
     }
 
     void ReceiveAIEvent(AIEventType eventType, Unit* pSender, Unit* pInvoker, uint32 /*miscValue*/) override
@@ -1560,12 +1559,15 @@ struct npc_nazgrelAI : public ScriptedAI
 };
 
 // 16819/force-commander-danath-trollbane
-bool QuestComplete_npc_nazgrel(Player* pPlayer, Creature* pCreature, const Quest* pQuest)
+bool QuestComplete_npc_nazgrel(Player* player, Creature* creature, const Quest* quest)
 {
-    if (pQuest->GetQuestId() == QUEST_FALL_OF_MAGETHERIDON_H) // And trigger yelling        
-        pCreature->AI()->SendAIEvent(AI_EVENT_START_EVENT, pPlayer, pCreature);
+    if (quest->GetQuestId() == QUEST_FALL_OF_MAGETHERIDON_H) // And trigger yelling        
+    {
+        creature->AI()->SendAIEvent(AI_EVENT_START_EVENT, player, creature);
+        return true;
+    }
 
-    return true;
+    return false;
 }
 
 UnitAI* GetAI_nazgrel(Creature* pCreature)
@@ -1620,9 +1622,9 @@ enum SedaiActions : uint32
     SEDAI_ACTION_SEDAI_START_ATTACK,
 };
 
-struct npc_vindicator_sedaiAI : public ScriptedAI, public CombatActions
+struct npc_vindicator_sedaiAI : public ScriptedAI
 {
-    npc_vindicator_sedaiAI(Creature* creature) : ScriptedAI(creature), CombatActions(SEDAI_COMBAT_ACTION_MAX)
+    npc_vindicator_sedaiAI(Creature* creature) : ScriptedAI(creature, SEDAI_COMBAT_ACTION_MAX)
     {
         m_creature->SetActiveObjectState(true);
         SetReactState(REACT_DEFENSIVE);
@@ -1740,7 +1742,7 @@ struct npc_vindicator_sedaiAI : public ScriptedAI, public CombatActions
 
     void Reset() override
     {
-        
+
     }
 
     void JustRespawned() override
@@ -1879,7 +1881,7 @@ enum KrunActions : uint32
     KRUN_ACTION_DESPAWN
 };
 
-struct npc_krunAI : public ScriptedAI, public TimerManager
+struct npc_krunAI : public ScriptedAI
 {
     npc_krunAI(Creature* creature) : ScriptedAI(creature)
     {
@@ -1901,11 +1903,8 @@ struct npc_krunAI : public ScriptedAI, public TimerManager
             if (TemporarySpawn* summon = (TemporarySpawn*)m_creature)
                 summon->UnSummon();
         });
-    }
 
-    void Reset() override
-    {
-        
+        SetReactState(REACT_PASSIVE);
     }
 
     void MovementInform(uint32 /*movementType*/, uint32 data) override
@@ -1921,11 +1920,6 @@ struct npc_krunAI : public ScriptedAI, public TimerManager
                 ResetTimer(KRUN_ACTION_EXECUTE_SEDAI, 1000);
                 break;
         }
-    }
-
-    void UpdateAI(const uint32 diff) override
-    {
-        UpdateTimers(diff);
     }
 };
 
@@ -2185,7 +2179,7 @@ struct CursedScarabPeriodicTrigger : public SpellScript
     void OnEffectExecute(Spell* spell, SpellEffectIndex /*effIdx*/) const override
     {
         Unit* target = spell->GetUnitTarget();
-        if (target && target->getFaction() != FACTION_SCARAB_HOSTILE && urand(0, 10) == 0)
+        if (target && target->GetFaction() != FACTION_SCARAB_HOSTILE && urand(0, 10) == 0)
             target->setFaction(FACTION_SCARAB_HOSTILE);
     }
 };
@@ -2225,9 +2219,9 @@ struct ExposeRazorthornRoot : public SpellScript
     }
 };
 
-struct npc_razorthorn_ravager_pet : public PetAI, public TimerManager
+struct npc_razorthorn_ravager_pet : public PetAI
 {
-    npc_razorthorn_ravager_pet(Creature* creature) : PetAI(creature)
+    npc_razorthorn_ravager_pet(Creature* creature) : PetAI(creature), m_animStage(0)
     {
         AddCustomAction(1, true, [&]() { HandleAnimations(); });
     }
@@ -2294,16 +2288,6 @@ struct npc_razorthorn_ravager_pet : public PetAI, public TimerManager
         ++m_animStage;
         if (timer)
             ResetTimer(1, timer);
-    }
-
-    void UpdateAI(const uint32 diff) override
-    {
-        UpdateTimers(diff);
-
-        if (GetCombatScriptStatus())
-            return;
-
-        PetAI::UpdateAI(diff);
     }
 };
 
@@ -2414,8 +2398,7 @@ void AddSC_hellfire_peninsula()
 
     pNewScript = new Script;
     pNewScript->Name = "npc_living_flare";
-    pNewScript->GetAI = &GetAI_npc_living_flare;
-    pNewScript->pEffectAuraDummy = &EffectAuraDummy_spell_aura_dummy_living_flare;
+    pNewScript->GetAI = &GetNewAIInstance<npc_living_flareAI>;
     pNewScript->RegisterSelf();
 
     pNewScript = new Script;
@@ -2475,5 +2458,8 @@ void AddSC_hellfire_peninsula()
     RegisterSpellScript<CursedScarabPeriodicTrigger>("spell_cursed_scarab_periodic");
     RegisterSpellScript<CursedScarabDespawnPeriodicTrigger>("spell_cursed_scarab_despawn_periodic");
     RegisterSpellScript<ExposeRazorthornRoot>("spell_razorthorn_root");
-    RegisterAuraScript<CharmRavager>("spell_charm_ravager");
+    RegisterSpellScript<CharmRavager>("spell_charm_ravager");
+    RegisterSpellScript<LivingFlareDetonator>("spell_living_flare_detonator");
+    RegisterSpellScript<LivingFlareMaster>("spell_living_flare_master");
+    RegisterSpellScript<LivingFlareUnstable>("spell_living_flare_unstable");
 }

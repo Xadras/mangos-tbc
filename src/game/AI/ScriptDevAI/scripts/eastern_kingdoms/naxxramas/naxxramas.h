@@ -121,7 +121,7 @@ enum
     GO_ARAC_ANUB_DOOR           = 181126,                   // encounter door
     GO_ARAC_ANUB_GATE           = 181195,                   // open after boss is dead
     GO_ARAC_FAER_WEB            = 181235,                   // encounter door
-    GO_ARAC_FAER_DOOR           = 194022,                   // after faerlina, to outer ring
+    GO_ARAC_FAER_DOOR           = 181167,                   // after faerlina, to outer ring
     GO_ARAC_MAEX_INNER_DOOR     = 181197,                   // encounter door
     GO_ARAC_MAEX_OUTER_DOOR     = 181209,                   // right before maex
 
@@ -203,6 +203,8 @@ enum
     SPELL_CLEAR_ALL_SHACKLES    = 29910,                    // Cast by Kel'Thuzad if more than three Guardians of Icecrown are controlled
 
     MAX_SHACKLES                = 3,                        // How many Guardians of Icecrown can be crowed control without Kel'Thuzad dispelling the shackles
+
+    SPELL_EXPLODE               = 28433,                    // Used by Living Poison blobs when players come in range
 };
 
 enum GothikSpellDummy
@@ -266,6 +268,8 @@ class instance_naxxramas : public ScriptedInstance, private DialogueHelper
         void OnObjectCreate(GameObject* gameObject) override;
 
         void OnCreatureDeath(Creature* creature) override;
+
+        void OnCreatureRespawn(Creature* creature) override;
 
         void SetData(uint32 type, uint32 data) override;
         uint32 GetData(uint32 type) const override;

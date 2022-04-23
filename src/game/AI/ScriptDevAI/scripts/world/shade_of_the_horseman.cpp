@@ -268,7 +268,7 @@ bool GossipHello_npc_orphan_matron(Player* player, Creature* creature)
     player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, GOSSIP_ITEM_WHO_IS_HORSEMAN, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
 
     uint32 currentPhase = creature->GetInstanceData()->GetData(TYPE_SHADE_OF_THE_HORSEMAN_ATTACK_PHASE + ShadeOfTheHorsemanData::GetTypeFromZoneId(creature->GetZoneId()));
-    if (player->isGameMaster() && (currentPhase == SHADE_PHASE_ALL_CLEAR || currentPhase == SHADE_PHASE_VICTORY))
+    if (player->IsGameMaster() && (currentPhase == SHADE_PHASE_ALL_CLEAR || currentPhase == SHADE_PHASE_VICTORY))
         player->ADD_GOSSIP_ITEM(GOSSIP_ICON_INTERACT_1, GOSSIP_ITEM_FORCE_START_EVENT, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
 
     uint32 gossipId = 0;
@@ -1097,13 +1097,13 @@ void AddSC_shade_of_the_horseman()
     pNewScript->RegisterSelf();
 
     RegisterSpellScript<HorsemanCreateWaterBucket>("spell_horseman_create_water_bucket");
-    RegisterAuraScript<HorsemanManiacalLaugh>("spell_horseman_maniacal_laugh");
-    RegisterAuraScript<HorsemanManiacalLaughDelayed>("spell_horseman_maniacal_laugh_delayed");
-    RegisterAuraScript<HorsemanStartFirePeriodic>("spell_horseman_start_fire_periodic");
+    RegisterSpellScript<HorsemanManiacalLaugh>("spell_horseman_maniacal_laugh");
+    RegisterSpellScript<HorsemanManiacalLaughDelayed>("spell_horseman_maniacal_laugh_delayed");
+    RegisterSpellScript<HorsemanStartFirePeriodic>("spell_horseman_start_fire_periodic");
     RegisterSpellScript<HorsemanStartFireTargetTest>("spell_horseman_start_fire_target_test");
     RegisterSpellScript<HorsemanStartFire>("spell_horseman_start_fire");
-    RegisterAuraScript<HorsemanFire>("spell_horseman_fire");
-    RegisterAuraScript<HorsemanConflagratePeriodic>("spell_horseman_conflagrate_periodic");
+    RegisterSpellScript<HorsemanFire>("spell_horseman_fire");
+    RegisterSpellScript<HorsemanConflagratePeriodic>("spell_horseman_conflagrate_periodic");
     RegisterSpellScript<HorsemanConflagrateTargetTest>("spell_horseman_conflagrate_target_test");
     RegisterSpellScript<BucketLands>("spell_bucket_lands");
     RegisterSpellScript<FireExtinguish>("spell_fire_extinguish");

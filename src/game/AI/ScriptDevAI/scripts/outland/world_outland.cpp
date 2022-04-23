@@ -436,6 +436,13 @@ struct world_map_outland : public ScriptedMap, public TimerManager
                     }
                 }
                 break;
+            case TYPE_TEROKK:
+            {
+                GuidVector targets;
+                GetCreatureGuidVectorFromStorage(NPC_SKYGUARD_TARGET, targets);
+                DespawnGuids(targets);
+                break;
+            }
             default:
                 if (type >= TYPE_SHADE_OF_THE_HORSEMAN_ATTACK_PHASE && type <= TYPE_SHADE_OF_THE_HORSEMAN_MAX)
                     return m_shadeData.HandleSetData(type, data);
@@ -579,6 +586,7 @@ struct world_map_outland : public ScriptedMap, public TimerManager
                 vendor->HandleEmote(EMOTE_STATE_USESTANDING);
                 vendor->SetCanFly(false);
                 break;
+            default: break;
         }
     }
 
@@ -732,6 +740,7 @@ struct world_map_outland : public ScriptedMap, public TimerManager
                 initialSpawnCount = PHASE_3_INITIAL_SPAWN_COUNT;
                 break;
             }
+            default: break;
         }
         for (uint32 i = 0; i < initialSpawnCount; ++i)
             SpawnRandomBashirMob();
@@ -752,6 +761,7 @@ struct world_map_outland : public ScriptedMap, public TimerManager
             case BASHIR_PHASE_TRANSITION_3:
                 vendor = tech->SummonCreature(NPC_AETHER_TECH_MASTER, bashirSpawnPositions[7][0], bashirSpawnPositions[7][1], bashirSpawnPositions[7][2], bashirSpawnPositions[7][3], TEMPSPAWN_CORPSE_TIMED_DESPAWN, 1000, true, true, 1);
                 break;
+            default: break;
         }
         vendor->Mount(MOUNT_NETHER_RAY_DISPLAY_ID);
         tech->AI()->SendAIEvent(AI_EVENT_CUSTOM_A, tech, tech);
@@ -775,6 +785,7 @@ struct world_map_outland : public ScriptedMap, public TimerManager
             case BASHIR_PHASE_ALL_VENDORS_SPAWNED:
                 ResetTimer(BASHIR_ACTION_OUTRO, (4 * 60 + 40) * IN_MILLISECONDS); // 4 minutes 40 seconds
                 break;
+            default: break;
         }
     }
 
@@ -801,6 +812,7 @@ struct world_map_outland : public ScriptedMap, public TimerManager
                 mob = tech->SummonCreature(NPC_GRAND_COLLECTOR, bashirSpawnPositions[12][0], bashirSpawnPositions[12][1], bashirSpawnPositions[12][2], bashirSpawnPositions[12][3], TEMPSPAWN_CORPSE_TIMED_DESPAWN, 2 * 60 * IN_MILLISECONDS, true);
                 mob->CastSpell(nullptr, SPELL_SPIRIT_SPAWN_IN, TRIGGERED_NONE);
                 break;
+            default: break;
         }
     }
 
@@ -820,6 +832,7 @@ struct world_map_outland : public ScriptedMap, public TimerManager
             case BASHIR_PHASE_3:
                 DoScriptText(SAY_TECH_PHASE_3, tech);
                 break;
+            default: break;
         }
         for (ObjectGuid guid : m_bashirEnemySpawns)
             if (Creature* spawn = instance->GetCreature(guid))
@@ -830,7 +843,7 @@ struct world_map_outland : public ScriptedMap, public TimerManager
 
     void StartManaSlaveEvent()
     {
-        if (GameObject* go = GetSingleGameObjectFromStorage(GO_BASHIR_CRYSTALFORGE))
+        if (GameObject* go = GetSingleGameObjectFromStorage(GO_BASHIR_CRYSTALFORGE, true))
             if (Creature* controller = GetClosestCreatureWithEntry(go, CRYSTALFORGE_SLAVE_EVENT_CONTROLLER_ENTRY, 10.f))
                 instance->ScriptsStart(sRelayScripts, CRYSTALFORGE_SLAVE_EVENT_RELAY_ID, controller, controller);
     }
@@ -1040,7 +1053,7 @@ struct world_map_outland : public ScriptedMap, public TimerManager
             default: break;
         }
         if (entry)
-            return GetSingleCreatureFromStorage(entry);
+            return GetSingleCreatureFromStorage(entry, true);
         return nullptr;
     }
 
@@ -1163,6 +1176,7 @@ struct world_map_outland : public ScriptedMap, public TimerManager
                 m_shartuulSpawnSequenceStage = 14;
                 break;
             }
+            default: break;
         }
     }
 
@@ -1228,6 +1242,7 @@ struct world_map_outland : public ScriptedMap, public TimerManager
                 {
                     case PHASE_1_FELGUARD_DEGRADER_ADDS: entry = urand(0, 1) ? NPC_FEL_IMP_DEFENDER : NPC_FELHOUND_DEFENDER; break;
                     case PHASE_3_DOOMGUARD_PUNISHER_ADDS: entry = NPC_GANARG_UNDERLING; break;
+                    default: break;
                 }
 
                 uint32 spellId = GetSpellIdForEntry(entry);
@@ -1532,7 +1547,7 @@ struct world_map_outland : public ScriptedMap, public TimerManager
             case NPC_MOARG_TORMENTER:
                 creature->GetCombatManager().SetLeashingDisable(true);
             case NPC_VIMGOL_VISUAL_BUNNY:
-            case PHASE_0_SHARTUUL_DISABLED:
+            case NPC_SKYGUARD_TARGET:
                 m_npcEntryGuidCollection[creature->GetEntry()].push_back(creature->GetObjectGuid());
                 break;
             case NPC_WYRM_FROM_BEYOND:
@@ -1558,6 +1573,7 @@ struct world_map_outland : public ScriptedMap, public TimerManager
             case NPC_DREADMAW:
             case NPC_LEGION_RING_SHIELD_ZAPPER_INVISMAN:
             case NPC_LEGION_RING_EVENT_INVISMAN_LG:
+            case NPC_YSIEL_WINDSINGER:
                 m_npcEntryGuidStore[creature->GetEntry()] = creature->GetObjectGuid();
                 break;
             case NPC_SKYGUARD_AETHER_TECH:
@@ -1736,6 +1752,10 @@ struct world_map_outland : public ScriptedMap, public TimerManager
                     if (Creature* gurthock = GetSingleCreatureFromStorage(NPC_GURTHOCK))
                         gurthock->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER);
                 break;
+            case NPC_SKYGUARD_TARGET:
+                sLog.outCustomLog("Skyguard Target died.");
+                sLog.traceLog();
+                break;
         }
     }
 
@@ -1749,6 +1769,7 @@ struct world_map_outland : public ScriptedMap, public TimerManager
                 std::sort(m_goEntryGuidCollection[go->GetEntry()].begin(), m_goEntryGuidCollection[go->GetEntry()].end());
                 break;
             case GO_BASHIR_CRYSTALFORGE:
+            case GO_HALAA_BANNER:
                 m_goEntryGuidStore.emplace(go->GetEntry(), go->GetObjectGuid());
                 break;
             case GO_WARP_GATE_FIRE_SMALL:
@@ -1833,7 +1854,7 @@ struct world_map_outland : public ScriptedMap, public TimerManager
     void ShowChatCommands(ChatHandler* handler) override
     {
         handler->SendSysMessage("This instance supports the following commands:\n bashir (0,1,2,3,4,5,6,7) starts event at stage respectively - start event, start phase 1, finish phase 1,"
-        "start phase 2, finish phase 2, start phase 3, finish phase 3, despawn event\n debuggurthock\n shartuulitem, shartuulreset");
+        "start phase 2, finish phase 2, start phase 3, finish phase 3, despawn event\n debuggurthock\n shartuulitem, shartuulreset, capturehalaa");
     }
 
     void ExecuteChatCommand(ChatHandler* handler, char* args) override
@@ -1888,6 +1909,14 @@ struct world_map_outland : public ScriptedMap, public TimerManager
         else if (val == "shartuulreset")
         {
             HandleShartuulEventReset();
+        }
+        else if (val == "capturehalaa")
+        {
+            if (GameObject* banner = GetSingleGameObjectFromStorage(GO_HALAA_BANNER))
+            {
+                Player* player = handler->GetSession()->GetPlayer();
+                StartEvents_Event(banner->GetMap(), player->GetTeam() == ALLIANCE ? banner->GetGOInfo()->capturePoint.winEventID1 : banner->GetGOInfo()->capturePoint.winEventID2, banner, banner, true, player);
+            }
         }
     }
 };

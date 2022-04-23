@@ -22,7 +22,7 @@
 #include "Server/DBCEnums.h"
 #include "MotionGenerators/Path.h"
 #include "Platform/Define.h"
-#include "Globals/SharedDefines.h"
+#include "Spells/SpellDefines.h"
 
 #include <map>
 #include <set>
@@ -157,6 +157,41 @@ struct ChatChannelsEntry
     // 36 string flags
 };
 
+struct CharacterFacialHairStylesEntry
+{
+    uint32 RaceID;                                          // 0
+    uint32 SexID;                                           // 1
+    uint32 VariationID;                                     // 2
+  //uint32 Geoset[5];                                       // 3-7
+};
+
+enum CharSectionFlags
+{
+    SECTION_FLAG_UNAVAILABLE = 0x01,
+};
+
+enum CharSectionType
+{
+    SECTION_TYPE_SKIN = 0,
+    SECTION_TYPE_FACE = 1,
+    SECTION_TYPE_FACIAL_HAIR = 2,
+    SECTION_TYPE_HAIR = 3,
+    SECTION_TYPE_UNDERWEAR = 4
+};
+
+struct CharSectionsEntry
+{
+    //uint32 Id;
+    uint32 Race;
+    uint32 Gender;
+    uint32 BaseSection;
+    uint32 VariationIndex;
+    uint32 ColorIndex;
+    //char* TexturePath[3];
+    uint32 Flags;
+    inline bool HasFlag(CharSectionFlags flag) const { return (Flags & flag) != 0; }
+};
+
 struct ChrClassesEntry
 {
     uint32  ClassID;                                        // 0        m_ID
@@ -220,7 +255,7 @@ struct CinematicSequencesEntry
 struct CreatureDisplayInfoEntry
 {
     uint32      Displayid;                                  // 0        m_ID
-    uint32      ModelId;                                    // 1        
+    uint32      ModelId;                                    // 1
     // 2        m_soundID
     uint32      ExtendedDisplayInfoID;                      // 3        m_extendedDisplayInfoID -> CreatureDisplayInfoExtraEntry::DisplayExtraId
     float       scale;                                      // 4        m_creatureModelScale
@@ -278,7 +313,7 @@ struct CreatureModelDataEntry
     //float Unk8
     //uint32 Unk9
     //uint32 Unk10
-    //float CollisionWidth;
+    float CollisionWidth;
     float CollisionHeight;
     float MountHeight;                                       // Used in calculation of unit collision data when mounted
     //float Unks[7] wotlk has 11
@@ -437,7 +472,14 @@ struct FactionTemplateEntry
                 return false;
         return enemyGroupMask == 0 && friendGroupMask == 0;
     }
-    bool IsContestedGuardFaction() const { return (factionFlags & FACTION_TEMPLATE_FLAG_CONTESTED_GUARD) != 0; }
+    bool IsContestedGuardFaction() const { return (factionFlags & FACTION_TEMPLATE_FLAG_ATTACK_PVP_ACTIVE_PLAYERS) != 0; }
+};
+
+struct GameObjectArtKitEntry
+{
+    uint32 ID;                                              // 0
+    //char* TextureVariation[3]                             // 1-3 m_textureVariations[3]
+    //char* AttachModel[4]                                  // 4-8 m_attachModels[4]
 };
 
 struct GameObjectDisplayInfoEntry
@@ -963,6 +1005,17 @@ struct SpellEntry
         // custom
         bool HasAttribute(SpellAttributesServerside attribute) const { return (AttributesServerside & attribute) != 0; }
 
+        uint32 GetAllEffectsMechanicMask() const
+        {
+            uint32 mask = 0;
+            if (Mechanic)
+                mask |= 1 << Mechanic;
+            for (uint8 i = 0; i < MAX_EFFECT_INDEX; ++i)
+                if (Effect[i] && EffectMechanic[i])
+                    mask |= 1 << EffectMechanic[i];
+            return mask;
+        }
+
     private:
         // prevent creating custom entries (copy data from original in fact)
         SpellEntry(SpellEntry const&);                      // DON'T must have implementation
@@ -1041,7 +1094,7 @@ struct SpellItemEnchantmentEntry
     char*       description[16];                            // 13-28    m_name_lang[16]
     // uint32      descriptionFlags;                        // 29 string flags
     uint32      aura_id;                                    // 30       m_itemVisual
-    uint32      slot;                                       // 31       m_flags
+    uint32      flags;                                      // 31       m_flags
     uint32      GemID;                                      // 32       m_src_itemID
     uint32      EnchantmentCondition;                       // 33       m_condition_id
 };
