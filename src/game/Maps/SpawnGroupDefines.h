@@ -47,14 +47,12 @@ struct SpawnGroupRandomEntry
     uint32 Chance;
 };
 
-// TODO: Formations struct
-// TODO: Linkage struct
-
 struct SpawnGroupDbGuids
 {
     uint32 Id;
     uint32 DbGuid;
     int32 SlotId;
+    uint32 Chance;
     uint32 OwnEntry;
     bool RandomEntry;
 };
@@ -84,6 +82,7 @@ enum CreatureGroupEvent : uint32
     CREATURE_GROUP_EVENT_EVADE,
     CREATURE_GROUP_EVENT_HOME,
     CREATURE_GROUP_EVENT_RESPAWN,
+    CREATURE_GROUP_EVENT_MEMBER_DIED,
 };
 
 struct SpawnGroupEntry
@@ -96,6 +95,7 @@ struct SpawnGroupEntry
     uint32 Flags;
     bool Active;
     bool EnabledByDefault;
+    bool HasChancedSpawns;
     std::vector<SpawnGroupDbGuids> DbGuids;
     std::vector<SpawnGroupRandomEntry> RandomEntries;
     std::vector<SpawnGroupRandomEntry*> EquallyChanced;
@@ -142,13 +142,14 @@ enum SpawGroupFormationOptions : uint32
 
 struct FormationEntry
 {
-    uint32 GroupId;
-    SpawnGroupFormationType Type;
-    uint32 MovementID;
-    uint32 MovementType;
-    float Spread;
-    uint32 Options;
-    std::string Comment;
+    uint32 GroupId                  = 0;
+    SpawnGroupFormationType Type    = SPAWN_GROUP_FORMATION_TYPE_RANDOM;
+    uint32 MovementIdOrWander       = 0;      
+    uint32 MovementType             = 0;
+    float Spread                    = 3.0f;
+    uint32 Options                  = 0;
+    std::string Comment             = "No comment";
+    bool IsDynamic                  = false;
 };
 
 struct SpawnGroupEntryContainer

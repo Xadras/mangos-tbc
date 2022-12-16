@@ -32,15 +32,18 @@ void WorldStateVariableManager::Initialize(uint32 completedEncounterMask)
     auto bounds = sObjectMgr.GetDungeonEncounterBoundsByMap(m_owner->GetId());
     for (auto itr = bounds.first; itr != bounds.second; ++itr)
     {
-        DungeonEncounterEntry const* encounter = (*itr).second->dbcEntry;
+        DungeonEncounterEntry const* encounter = (*itr).second.dbcEntry;
         if (m_owner->GetDifficulty() != encounter->Difficulty)
             continue;
 
-        SetEncounterVariable(encounter->Id, ((1 << encounter->encounterIndex) & completedEncounterMask) == 1);
+        if (encounter->CompleteWorldStateID) // use official data whenever available
+            SetVariable(encounter->CompleteWorldStateID, ((1 << encounter->encounterIndex) & completedEncounterMask) == 1);
+        else // phase this out eventually
+            SetEncounterVariable(encounter->Id, ((1 << encounter->encounterIndex) & completedEncounterMask) == 1);
     }
 }
 
-int32 WorldStateVariableManager::GetVariable(uint32 Id) const
+int32 WorldStateVariableManager::GetVariable(int32 Id) const
 {
     auto itr = m_variables.find(Id);
     if (itr == m_variables.end())
@@ -48,12 +51,26 @@ int32 WorldStateVariableManager::GetVariable(uint32 Id) const
     return (*itr).second.value;
 }
 
-void WorldStateVariableManager::SetVariable(uint32 Id, int32 value)
+WorldStateVariable const* WorldStateVariableManager::GetVariableData(int32 Id) const
 {
-    m_variables[Id].value = value;
+    auto itr = m_variables.find(Id);
+    if (itr == m_variables.end())
+        return nullptr;
+    return &((*itr).second);
 }
 
-void WorldStateVariableManager::SetVariableData(uint32 Id, bool send, uint32 zoneId, uint32 areaId)
+void WorldStateVariableManager::SetVariable(int32 Id, int32 value)
+{
+    auto& variable = m_variables[Id];
+    if (variable.value == value)
+        return;
+
+    variable.value = value;
+    if (m_variables[Id].send)
+        BroadcastVariable(Id);
+}
+
+void WorldStateVariableManager::SetVariableData(int32 Id, bool send, uint32 zoneId, uint32 areaId)
 {
     auto& variable = m_variables[Id];
     variable.send = send;
@@ -61,7 +78,7 @@ void WorldStateVariableManager::SetVariableData(uint32 Id, bool send, uint32 zon
     variable.areaId = areaId;
 }
 
-void WorldStateVariableManager::AddVariableExecutor(uint32 Id, std::function<void()>& executor)
+void WorldStateVariableManager::AddVariableExecutor(int32 Id, std::function<void()>& executor)
 {
     m_variables[Id].executors.push_back(executor);
 }
@@ -74,22 +91,34 @@ void WorldStateVariableManager::FillInitialWorldStates(ByteBuffer& data, uint32&
             (!variable.second.zoneId || variable.second.zoneId == zoneId) &&
             (!variable.second.areaId || variable.second.areaId == areaId))
         {
-            data << uint32(variable.first);
+            data << int32(variable.first);
             data << int32(variable.second.value);
             ++count;
         }
     }
 }
 
-void WorldStateVariableManager::BroadcastVariable(uint32 Id)
+void WorldStateVariableManager::BroadcastVariable(int32 Id) const
 {
     auto const& lPlayers = m_owner->GetPlayers();
     if (!lPlayers.isEmpty())
     {
-        int32 value = GetVariable(Id);
+        WorldStateVariable const* variable = GetVariableData(Id);
+        MANGOS_ASSERT(variable); // if we are broadcasting a variable it must be initialized
+        int32 value = variable->value;
+        bool queryIds = variable->zoneId || variable->areaId;
         for (const auto& lPlayer : lPlayers)
+        {
             if (Player* player = lPlayer.getSource())
-                player->SendUpdateWorldState(Id, value);
+            {
+                uint32 zoneId, areaId;
+                if (queryIds) // optimization
+                    player->GetZoneAndAreaId(zoneId, areaId);
+                if ((!variable->zoneId || variable->zoneId == zoneId) &&
+                    (!variable->areaId || variable->areaId == areaId))
+                    player->SendUpdateWorldState(Id, value);
+            }
+        }
     }
 }
 
@@ -97,7 +126,10 @@ std::string WorldStateVariableManager::GetVariableList() const
 {
     std::string output;
     for (auto& data : m_variables)
-        output += "Id: " + std::to_string(data.first) + " Val: " + std::to_string(data.second.value) + "\n";
+    {
+        WorldStateName* name = sObjectMgr.GetWorldStateName(data.first);
+        output += "Id: " + std::to_string(data.first) + " Val: " + std::to_string(data.second.value) + "\n" + "Name:" + (name ? name->Name : std::string()) + "\n";
+    }
     return output;
 }
 

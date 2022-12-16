@@ -62,9 +62,9 @@ enum ScriptCommand                                          // resSource, resTar
     SCRIPT_COMMAND_CREATE_ITEM              = 17,           // source or target must be player, datalong = item entry, datalong2 = amount
     SCRIPT_COMMAND_DESPAWN_SELF             = 18,           // resSource = Creature, datalong = despawn delay
     SCRIPT_COMMAND_PLAY_MOVIE               = 19,           // target can only be a player, datalog = movie id
-    SCRIPT_COMMAND_MOVEMENT                 = 20,           // resSource = Creature. datalong = MovementType (0:idle, 1:random or 2:waypoint), datalong2 = wander-distance/pathId, datalong3 = timer/passTarget, dataint1 = forcedMovement
+    SCRIPT_COMMAND_MOVEMENT                 = 20,           // resSource = Creature. datalong = MovementType (0:idle, 1:random, 2:waypoint, 3:path, 18:fall), datalong2 = wander-distance/pathId/relayId, datalong3 = timer/passTarget, dataint1 = forcedMovement
     // data_flags &  SCRIPT_FLAG_COMMAND_ADDITIONAL = Random-movement around current position
-    SCRIPT_COMMAND_SET_ACTIVEOBJECT         = 21,           // resSource = Creature
+    SCRIPT_COMMAND_SET_ACTIVEOBJECT         = 21,           // resSource = WorldObject
     // datalong=bool 0=off, 1=on
     SCRIPT_COMMAND_SET_FACTION              = 22,           // resSource = Creature
     // datalong=factionId, datalong2=faction_flags
@@ -108,6 +108,7 @@ enum ScriptCommand                                          // resSource, resTar
     SCRIPT_COMMAND_SEND_MAIL                = 38,           // resSource WorldObject, can be nullptr, resTarget Player
     // datalong: Send mailTemplateId from resSource (if provided) to player resTarget
     // datalong2: AlternativeSenderEntry. Use as sender-Entry
+    // datalong3: Money
     // dataint1: Delay (>= 0) in Seconds
     SCRIPT_COMMAND_SET_HOVER                  = 39,           // resSource = Creature
     // datalong = bool 0=off, 1=on
@@ -134,6 +135,8 @@ enum ScriptCommand                                          // resSource, resTar
     SCRIPT_COMMAND_ZONE_PULSE               = 50,           //
     SCRIPT_COMMAND_SPAWN_GROUP              = 51,           // dalalong = command
     SCRIPT_COMMAND_SET_GOSSIP_MENU          = 52,           // datalong = gossip_menu_id
+    SCRIPT_COMMAND_SET_WORLDSTATE           = 53,           // dataint = worldstate id, dataint2 = new value, 
+    SCRIPT_COMMAND_SET_SHEATHE              = 54,           // dataint = worldstate id, dataint2 = new value, 
 };
 
 #define MAX_TEXT_ID 4                                       // used for SCRIPT_COMMAND_TALK, SCRIPT_COMMAND_EMOTE, SCRIPT_COMMAND_CAST_SPELL, SCRIPT_COMMAND_TERMINATE_SCRIPT
@@ -389,6 +392,7 @@ struct ScriptInfo
         {
             uint32 mailTemplateId;                          // datalong
             uint32 altSender;                               // datalong2;
+            uint32 money;                                   // datalong3;
         } sendMail;
 
         struct                                              // SCRIPT_COMMAND_SET_HOVER (39)
@@ -444,23 +448,24 @@ struct ScriptInfo
             uint32 param2;                                  // datalong2
         } setData64;
 
-        struct                                              // SCRIPT_COMMAND_SET_GOSSIP_MENU (52)
-        {
-            uint32 gossipMenuId;                            // datalong
-        } setGossipMenu;
-
-        struct                                              // SCRIPT_COMMAND_LOG_KILL (99)
-        {
-            uint32 empty1;                                  // datalong
-            uint32 empty2;                                  // datalong2
-        } logKill;
-
-        struct                                              // SCRIPT_COMMAND_SPAWN_GROUP (60)
+        struct                                              // SCRIPT_COMMAND_SPAWN_GROUP (51)
         {
             uint32 command;                                 // datalong
             uint32 data1;                                   // datalong2
             uint32 data2;                                   // datalong3
         } formationData;
+
+        struct                                              // SCRIPT_COMMAND_SET_GOSSIP_MENU (52)
+        {
+            uint32 gossipMenuId;                            // datalong
+        } setGossipMenu;
+
+        // unused                                           // SCRIPT_COMMAND_SET_WORLDSTATE (53)
+
+        struct                                              // SCRIPT_COMMAND_SET_SHEATHE (54)
+        {
+            uint32 sheatheState;                            // datalong
+        } setSheathe;
 
         struct
         {
@@ -475,13 +480,22 @@ struct ScriptInfo
 
     int32 textId[MAX_TEXT_ID];                              // dataint to dataint4
 
+    union
+    {
+        struct
+        {
+            float data[1];
+        } rawFloat;
+    };
+
     float x;
     float y;
     float z;
     float o;
+    float speed;
     uint32 condition_id;
 
-    ScriptInfo() : id(0), delay(0), command(0), buddyEntry(0), searchRadiusOrGuid(0), data_flags(0), x(0), y(0), z(0), o(0), condition_id(0)
+    ScriptInfo() : id(0), delay(0), command(0), buddyEntry(0), searchRadiusOrGuid(0), data_flags(0), x(0), y(0), z(0), o(0), speed(0), condition_id(0)
     {
         memset(raw.data, 0, sizeof(raw.data));
         memset(textId, 0, sizeof(textId));
@@ -695,7 +709,7 @@ class ScriptMgr
 };
 
 // Starters for events
-bool StartEvents_Event(Map* map, uint32 id, Object* source, Object* target, bool isStart = true, Unit* forwardToPvp = nullptr);
+bool StartEvents_Event(Map* map, uint32 id, Object* source, Object* target, bool isStart = true);
 
 #define sScriptMgr MaNGOS::Singleton<ScriptMgr>::Instance()
 

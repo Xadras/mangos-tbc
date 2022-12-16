@@ -21,6 +21,7 @@
 
 #include "Spells/Spell.h"
 #include <map>
+#include <memory>
 #include <functional>
 
 class DynamicObject;
@@ -36,6 +37,8 @@ struct PeriodicTriggerData
 
 struct SpellScript
 {
+    virtual ~SpellScript() = default;
+
     // called on spell init
     virtual void OnInit(Spell* /*spell*/) const {}
     // called on success during Spell::Prepare
@@ -70,19 +73,23 @@ struct AuraCalcData
 {
     Unit* caster; Unit* target; SpellEntry const* spellProto; SpellEffectIndex effIdx;
     Aura* aura; // cannot be used in auras that utilize stacking in checkcast - can be nullptr
-    AuraCalcData(Aura* aura, Unit* caster, Unit* target, SpellEntry const* spellProto, SpellEffectIndex effIdx) : aura(aura), caster(caster), target(target), spellProto(spellProto), effIdx(effIdx) {}
+    AuraCalcData(Aura* aura, Unit* caster, Unit* target, SpellEntry const* spellProto, SpellEffectIndex effIdx) : caster(caster), target(target), spellProto(spellProto), effIdx(effIdx), aura(aura) {}
 };
 
 struct AuraScript
 {
+    virtual ~AuraScript() = default;
+
     // called on SpellAuraHolder creation - caster can be nullptr
     virtual void OnHolderInit(SpellAuraHolder* /*holder*/, WorldObject* /*caster*/) const {}
     // called after end of aura object constructor
     virtual void OnAuraInit(Aura* /*aura*/) const {}
     // called during any event that calculates aura modifier amount - caster can be nullptr
-    virtual int32 OnAuraValueCalculate(AuraCalcData& data, int32 value) const { return value; }
+    virtual int32 OnAuraValueCalculate(AuraCalcData& /*data*/, int32 value) const { return value; }
     // called during done/taken damage calculation
     virtual void OnDamageCalculate(Aura* /*aura*/, Unit* /*victim*/, int32& /*advertisedBenefit*/, float& /*totalMod*/) const {}
+    // called during duration calculation
+    virtual int32 OnDurationCalculate(WorldObject const* /*caster*/, Unit const* /*target*/, int32 duration) const { return duration; }
     // the following two hooks are done in an alternative fashion due to how they are usually used
     // if an aura is applied before, its removed after, and if some aura needs to do something after aura effect is applied, need to revert that change before its removed
     // called before aura apply and after aura unapply
@@ -144,8 +151,8 @@ class SpellScriptMgr
 
         static std::map<uint32, SpellScript*> m_spellScriptMap;
         static std::map<uint32, AuraScript*> m_auraScriptMap;
-        static std::map<std::string, SpellScript*> m_spellScriptStringMap;
-        static std::map<std::string, AuraScript*> m_auraScriptStringMap;
+        static std::map<std::string, std::unique_ptr<SpellScript>> m_spellScriptStringMap;
+        static std::map<std::string, std::unique_ptr<AuraScript>> m_auraScriptStringMap;
 };
 
 // note - linux name mangling bugs out if two script templates have same class name - avoid it

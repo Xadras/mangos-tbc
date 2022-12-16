@@ -39,6 +39,8 @@
 #include "Loot/LootMgr.h"
 #include "Anticheat/Anticheat.hpp"
 
+#include <openssl/md5.h>
+
 #include <mutex>
 #include <deque>
 #include <algorithm>
@@ -92,16 +94,15 @@ bool WorldSessionFilter::Process(WorldPacket const& packet) const
 
 /// WorldSession constructor
 WorldSession::WorldSession(uint32 id, WorldSocket* sock, AccountTypes sec, uint8 expansion, time_t mute_time, LocaleConstant locale, std::string accountName, uint32 accountFlags, uint32 recruitingFriend, bool isARecruiter) :
-    LookingForGroup_auto_join(false), LookingForGroup_auto_add(true), m_muteTime(mute_time), m_accountName(accountName),
-    _player(nullptr), m_Socket(sock ? sock->shared<WorldSocket>() : nullptr),
-    m_gameBuild(0), m_clientOS(CLIENT_OS_UNKNOWN), m_accountMaxLevel(0), m_lastAnticheatUpdate(0), m_anticheat(nullptr), m_localAddress("127.0.0.1"),
-    m_requestSocket(nullptr), m_sessionState(WORLD_SESSION_STATE_CREATED),
-    _security(sec), _accountId(id), m_expansion(expansion), m_orderCounter(0), _logoutTime(0), m_playerSave(true),
-    m_inQueue(false), m_playerLoading(false), m_kickSession(false), m_playerLogout(false), m_playerRecentlyLogout(false),
+    LookingForGroup_auto_join(false), LookingForGroup_auto_add(true), m_muteTime(mute_time),
+    _player(nullptr), m_Socket(sock ? sock->shared<WorldSocket>() : nullptr), m_requestSocket(nullptr), m_localAddress("127.0.0.1"), m_sessionState(WORLD_SESSION_STATE_CREATED),
+    _security(sec), _accountId(id), m_expansion(expansion), m_accountName(accountName), m_accountFlags(accountFlags),
+    m_clientOS(CLIENT_OS_UNKNOWN), m_clientPlatform(CLIENT_PLATFORM_UNKNOWN), m_gameBuild(0), m_accountMaxLevel(0), m_orderCounter(0), m_lastAnticheatUpdate(0), m_anticheat(nullptr),
+    _logoutTime(0), m_playerSave(true), m_inQueue(false), m_playerLoading(false), m_kickSession(false), m_playerLogout(false), m_playerRecentlyLogout(false),
     m_sessionDbcLocale(sWorld.GetAvailableDbcLocale(locale)), m_sessionDbLocaleIndex(sObjectMgr.GetStorageLocaleIndexFor(locale)),
     m_latency(0), m_tutorialState(TUTORIALDATA_UNCHANGED),
     m_timeSyncClockDeltaQueue(6), m_timeSyncClockDelta(0), m_pendingTimeSyncRequests(), m_timeSyncNextCounter(0), m_timeSyncTimer(0),
-    m_accountFlags(accountFlags), m_recruitingFriendId(recruitingFriend), m_isRecruiter(isARecruiter)
+    m_recruitingFriendId(recruitingFriend), m_isRecruiter(isARecruiter)
     {}
 
 /// WorldSession destructor
@@ -337,7 +338,7 @@ void WorldSession::ProcessByteBufferException(WorldPacket const& packet)
             GetAccountId(), GetRemoteAddress().c_str());
         m_anticheat->RecordCheat(CHEAT_ACTION_INFO_LOG, "Anticrash", "ByteBufferException");
         ObjectGuid guid = _player->GetObjectGuid();
-        GetMessager().AddMessage([guid](WorldSession* world) -> void
+        GetMessager().AddMessage([guid](WorldSession* /*world*/) -> void
         {
             ObjectAccessor::KickPlayer(guid);
         });
@@ -345,7 +346,7 @@ void WorldSession::ProcessByteBufferException(WorldPacket const& packet)
 }
 
 /// Update the WorldSession (triggered by World update)
-bool WorldSession::Update(uint32 diff)
+bool WorldSession::Update(uint32 /*diff*/)
 {
     GetMessager().Execute(this);
 
@@ -736,6 +737,7 @@ void WorldSession::LogoutPlayer()
         // calls to GetMap in this case may cause crashes
         if (_player->IsInWorld())
         {
+            _player->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_LEAVE_WORLD);
             Map* _map = _player->GetMap();
             _map->Remove(_player, true);
         }
@@ -1051,15 +1053,27 @@ void WorldSession::SetAccountData(AccountDataType type, time_t time_, const std:
 
 const uint8 emptyArray[16] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
 
-void WorldSession::SendAccountDataTimes(uint32 /*mask*/)
+void WorldSession::SendAccountDataTimes()
 {
-    // unknown identifier on TBC - if sent all 0 - client only sends
-    // if sent all 1 - client requests everything
-    // probably needs to be some sort of client unique identifier I was not able to reverse
-    bool configValue = sWorld.getConfig(CONFIG_BOOL_ACCOUNT_DATA);
-    WorldPacket data(SMSG_ACCOUNT_DATA_TIMES, 128);
-    for (int i = 0; i < 32; ++i)
-        data << uint32(configValue);
+    WorldPacket data(SMSG_ACCOUNT_DATA_TIMES, NUM_ACCOUNT_DATA_TYPES * MD5_DIGEST_LENGTH);
+    for (AccountData const& itr : m_accountData)
+    {
+        if (itr.Data.empty())
+        {
+            for (int i = 0; i < MD5_DIGEST_LENGTH; i++)
+                data << uint8(0);
+        }
+        else
+        {
+            MD5_CTX md5;
+            MD5_Init(&md5);
+            MD5_Update(&md5, itr.Data.c_str(), itr.Data.size());
+
+            uint8 fileHash[MD5_DIGEST_LENGTH];
+            MD5_Final(fileHash, &md5);
+            data.append(fileHash, MD5_DIGEST_LENGTH);
+        }
+    }
     SendPacket(data);
 }
 

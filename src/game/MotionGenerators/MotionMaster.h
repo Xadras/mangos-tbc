@@ -72,6 +72,7 @@ enum MovementGeneratorType
     EFFECT_MOTION_TYPE              = 15,                   // WrapperMovementGenerator.h
     TAXI_MOTION_TYPE                = 16,                   // WaypointMovementGenerator.h
     TIMED_RANDOM_MOTION_TYPE        = 17,                   // RandomMovementGenerator.h
+    FALL_MOTION_TYPE                = 18,                   // WrapperMovementGenerator.h
 
     EXTERNAL_WAYPOINT_MOVE          = 18,                   // Only used in UnitAI::MovementInform when a waypoint is reached. The pathId >= 0 is added as additonal value
     EXTERNAL_WAYPOINT_MOVE_START    = 19,                   // Only used in UnitAI::MovementInform when a waypoint is started. The pathId >= 0 is added as additional value
@@ -79,36 +80,6 @@ enum MovementGeneratorType
 
     FORMATION_MOTION_TYPE           = 21,                   // TargetedMovementGenerator.h
 };
-
-static const char* GetMoveTypeStr(MovementGeneratorType mType)
-{
-    switch (mType)
-    {
-       case IDLE_MOTION_TYPE:                return "IDLE_MOTION_TYPE";
-       case RANDOM_MOTION_TYPE:              return "RANDOM_MOTION_TYPE";
-       case WAYPOINT_MOTION_TYPE:            return "WAYPOINT_MOTION_TYPE";
-       case LINEAR_WP_MOTION_TYPE:           return "LINEAR_WP_MOTION_TYPE";
-       case PATH_MOTION_TYPE:                return "PATH_MOTION_TYPE";
-       case DISTRACT_MOTION_TYPE:            return "DISTRACT_MOTION_TYPE";
-       case STAY_MOTION_TYPE:                return "STAY_MOTION_TYPE";
-       case FOLLOW_MOTION_TYPE:              return "FOLLOW_MOTION_TYPE";
-       case CHASE_MOTION_TYPE:               return "CHASE_MOTION_TYPE";
-       case RETREAT_MOTION_TYPE:             return "RETREAT_MOTION_TYPE";
-       case TIMED_FLEEING_MOTION_TYPE:       return "TIMED_FLEEING_MOTION_TYPE";
-       case POINT_MOTION_TYPE:               return "POINT_MOTION_TYPE";
-       case HOME_MOTION_TYPE:                return "HOME_MOTION_TYPE";
-       case FLEEING_MOTION_TYPE:             return "FLEEING_MOTION_TYPE";
-       case CONFUSED_MOTION_TYPE:            return "CONFUSED_MOTION_TYPE";
-       case EFFECT_MOTION_TYPE:              return "EFFECT_MOTION_TYPE";
-       case TAXI_MOTION_TYPE:                return "TAXI_MOTION_TYPE";
-       case TIMED_RANDOM_MOTION_TYPE:        return "TIMED_RANDOM_MOTION_TYPE";
-       case EXTERNAL_WAYPOINT_MOVE:          return "EXTERNAL_WAYPOINT_MOVE";
-       case EXTERNAL_WAYPOINT_MOVE_START:    return "EXTERNAL_WAYPOINT_MOVE_START";
-       case EXTERNAL_WAYPOINT_FINISHED_LAST: return "EXTERNAL_WAYPOINT_FINISHED_LAST";
-       case FORMATION_MOTION_TYPE:           return "FORMATION_MOTION_TYPE";
-       default:                              return "UKNOWN_MOTION_TYPE";
-    }
-}
 
 enum MMCleanFlag
 {
@@ -119,10 +90,10 @@ enum MMCleanFlag
 
 enum ForcedMovement
 {
-    FORCED_MOVEMENT_NONE,
-    FORCED_MOVEMENT_WALK,
-    FORCED_MOVEMENT_RUN,
-    FORCED_MOVEMENT_FLIGHT,
+    FORCED_MOVEMENT_NONE    = 0,
+    FORCED_MOVEMENT_WALK    = 1,
+    FORCED_MOVEMENT_RUN     = 2,
+    FORCED_MOVEMENT_FLIGHT  = 3,
 };
 
 class MotionMaster : private std::stack<MovementGenerator*>
