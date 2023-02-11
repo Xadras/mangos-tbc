@@ -12,8 +12,8 @@
 #include "WardenScan.hpp"
 
 #include "Common.h"
-#include "ByteBuffer.h"
-#include "SARC4.hpp"
+#include "Util/ByteBuffer.h"
+#include "Auth/SARC4.h"
 
 #include <vector>
 #include <memory>

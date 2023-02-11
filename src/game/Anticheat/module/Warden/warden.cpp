@@ -11,25 +11,22 @@
 
 #include "Common.h"
 #include "Entities/Player.h"
-#include "WorldPacket.h"
+#include "Server/WorldPacket.h"
 #include "Server/WorldSession.h"
 #include "World/World.h"
 #include "Log.h"
 #include "Server/Opcodes.h"
-#include "ByteBuffer.h"
+#include "Util/ByteBuffer.h"
 #include "Database/DatabaseEnv.h"
 #include "Policies/Singleton.h"
 #include "Auth/BigNumber.h"
 #include "warden.hpp"
 #include "WardenModuleMgr.hpp"
-#include "Util.h"
+#include "Util/Util.h"
 #include "Anticheat/module/libanticheat.hpp"
 #include "WardenWin.hpp"
 #include "WardenMac.hpp"
 #include "WardenScanMgr.hpp"
-
-#include <openssl/md5.h>
-#include <openssl/sha.h>
 
 #include <zlib.h>
 
@@ -345,7 +342,7 @@ void Warden::StopScanClock()
 
 uint32 Warden::BuildChecksum(const uint8* data, size_t size)
 {
-    uint8 hash[SHA_DIGEST_LENGTH];
+    uint8 hash[Sha1Hash::GetLength()];
     SHA1(data, size, hash);
 
     uint32 checkSum = 0;

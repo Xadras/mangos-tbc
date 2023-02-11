@@ -23,7 +23,7 @@
 #include "Entities/Unit.h"
 #include "Globals/SharedDefines.h"
 #include "Server/DBCEnums.h"
-#include "Util.h"
+#include "Util/Util.h"
 #include "Entities/CreatureSpellList.h"
 
 #include <list>
@@ -858,7 +858,13 @@ class Creature : public Unit
         // Spell Lists
         CreatureSpellList const& GetSpellList() const { return m_spellList; }
         std::vector<uint32> GetCharmSpells() const;
-        bool GetSpellCooldown(uint32 spellId, uint32& cooldown) const;
+        enum CooldownResult
+        {
+            COOLDOWN_RESULT_NOT_FOUND       = 0,
+            COOLDOWN_RESULT_FOUND           = 1,
+            COOLDOWN_RESULT_CATEGORY_FOUND  = 2,
+        };
+        CooldownResult GetSpellCooldown(uint32 spellId, uint32& cooldown) const;
 
         void SetCreatureGroup(CreatureGroup* group);
         void ClearCreatureGroup();

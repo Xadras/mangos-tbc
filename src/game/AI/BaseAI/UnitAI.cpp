@@ -251,6 +251,7 @@ CanCastResult UnitAI::DoCastSpellIfCan(Unit* target, uint32 spellId, uint32 cast
                         canCastResult = CAST_FAIL_POWER;
                         break;
                     case SPELL_FAILED_CASTER_AURASTATE: // valid - doesnt need logging
+                    case SPELL_FAILED_TARGET_AURASTATE:
                     case SPELL_FAILED_TARGET_NO_WEAPONS:
                     case SPELL_FAILED_BAD_TARGETS:
                     case SPELL_FAILED_DONT_REPORT:
@@ -350,7 +351,7 @@ void UnitAI::OnSpellCastStateChange(Spell const* spell, bool state, WorldObject*
         return;
 
     SpellEntry const* spellInfo = spell->m_spellInfo;
-    if (spellInfo->HasAttribute(SPELL_ATTR_EX4_ALLOW_CAST_WHILE_CASTING) || spellInfo->HasAttribute(SPELL_ATTR_ON_NEXT_SWING_NO_DAMAGE) || spellInfo->HasAttribute(SPELL_ATTR_ON_NEXT_SWING) || spellInfo->HasAttribute(SPELL_ATTR_EX5_AI_DOESNT_FACE_TARGET))
+    if (spellInfo->HasAttribute(SPELL_ATTR_EX4_ALLOW_CAST_WHILE_CASTING) || spellInfo->HasAttribute(SPELL_ATTR_ON_NEXT_SWING_NO_DAMAGE) || spellInfo->HasAttribute(SPELL_ATTR_ON_NEXT_SWING))
         return;
 
     // Creature should always stop before it will cast a non-instant spell
@@ -389,7 +390,7 @@ void UnitAI::OnSpellCastStateChange(Spell const* spell, bool state, WorldObject*
 
     if (state)
     {
-        if (target && (m_unit != target || forceTarget))
+        if (!spellInfo->HasAttribute(SPELL_ATTR_EX5_AI_DOESNT_FACE_TARGET) && target && (m_unit != target || forceTarget))
         {
             m_unit->SetTarget(target);
             if (m_unit != target)
@@ -726,15 +727,14 @@ CreatureList UnitAI::DoFindFriendlyMissingBuff(SpellEntry const* spellInfo, bool
     float maxRange = CalculateSpellRange(spellInfo);
     if (inCombat == false)
     {
-        MaNGOS::FriendlyMissingBuffInRangeInCombatCheck u_check(m_unit, maxRange, spellInfo->Id);
-        MaNGOS::CreatureListSearcher<MaNGOS::FriendlyMissingBuffInRangeInCombatCheck> searcher(list, u_check);
+        MaNGOS::FriendlyMissingBuffInRangeNotInCombatCheck u_check(m_unit, maxRange, spellInfo->Id);
+        MaNGOS::CreatureListSearcher<MaNGOS::FriendlyMissingBuffInRangeNotInCombatCheck> searcher(list, u_check);
         Cell::VisitGridObjects(m_unit, searcher, maxRange);
     }
     else if (inCombat == true)
     {
-        MaNGOS::FriendlyMissingBuffInRangeNotInCombatCheck u_check(m_unit, maxRange, spellInfo->Id);
-        MaNGOS::CreatureListSearcher<MaNGOS::FriendlyMissingBuffInRangeNotInCombatCheck> searcher(list, u_check);
-
+        MaNGOS::FriendlyMissingBuffInRangeInCombatCheck u_check(m_unit, maxRange, spellInfo->Id);
+        MaNGOS::CreatureListSearcher<MaNGOS::FriendlyMissingBuffInRangeInCombatCheck> searcher(list, u_check);
         Cell::VisitGridObjects(m_unit, searcher, maxRange);
     }
 

@@ -16,56 +16,36 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#include "Auth/Sha1.h"
-#include "Auth/BigNumber.h"
+#include "Auth/SARC4.h"
 
-#include <cstdarg>
-
-Sha1Hash::Sha1Hash()
+SARC4::SARC4(size_t len) : m_ctx(EVP_CIPHER_CTX_new())
 {
-    SHA1_Init(&mC);
+    EVP_CIPHER_CTX_init(m_ctx);
+    EVP_EncryptInit_ex(m_ctx, EVP_rc4(), nullptr, nullptr, nullptr);
+    EVP_CIPHER_CTX_set_key_length(m_ctx, len);
 }
 
-Sha1Hash::~Sha1Hash()
+SARC4::SARC4(const uint8 *seed, size_t len) : m_ctx(EVP_CIPHER_CTX_new())
 {
-    SHA1_Init(&mC);
+    EVP_CIPHER_CTX_init(m_ctx);
+    EVP_EncryptInit_ex(m_ctx, EVP_rc4(), nullptr, nullptr, nullptr);
+    EVP_CIPHER_CTX_set_key_length(m_ctx, len);
+    EVP_EncryptInit_ex(m_ctx, nullptr, nullptr, seed, nullptr);
 }
 
-void Sha1Hash::UpdateData(const uint8* dta, int len)
+SARC4::~SARC4()
 {
-    SHA1_Update(&mC, dta, len);
+    EVP_CIPHER_CTX_free(m_ctx);
 }
 
-void Sha1Hash::UpdateData(const std::vector<uint8>& data)
+void SARC4::Init(const uint8 *seed)
 {
-    SHA1_Update(&mC, data.data(), data.size());
+    EVP_EncryptInit_ex(m_ctx, nullptr, nullptr, seed, nullptr);
 }
 
-void Sha1Hash::UpdateData(const std::string& str)
+void SARC4::UpdateData(uint8 *data, size_t len)
 {
-    UpdateData((uint8 const*)str.c_str(), str.length());
-}
-
-void Sha1Hash::UpdateBigNumbers(BigNumber* bn0, ...)
-{
-    va_list v;
-
-    va_start(v, bn0);
-    BigNumber* bn = bn0;
-    while (bn)
-    {
-        UpdateData(bn->AsByteArray());
-        bn = va_arg(v, BigNumber*);
-    }
-    va_end(v);
-}
-
-void Sha1Hash::Initialize()
-{
-    SHA1_Init(&mC);
-}
-
-void Sha1Hash::Finalize(void)
-{
-    SHA1_Final(mDigest, &mC);
+    int outlen = 0;
+    EVP_EncryptUpdate(m_ctx, data, &outlen, data, len);
+    EVP_EncryptFinal_ex(m_ctx, data, &outlen);
 }
