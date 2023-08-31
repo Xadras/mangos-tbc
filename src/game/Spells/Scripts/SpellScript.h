@@ -48,7 +48,7 @@ struct SpellScript
     // called at end of Spell::CheckCast - strict is true in Spell::Prepare
     virtual SpellCastResult OnCheckCast(Spell* /*spell*/, bool /*strict*/) const { return SPELL_CAST_OK; }
     // called on Spell::SendCastResult - for overriding generic errors
-    virtual void OnSpellCastResultOverride(SpellCastResult& result, uint32& param1, uint32& param2) const {}
+    virtual void OnSpellCastResultOverride(SpellCastResult& /*result*/, uint32& /*param1*/, uint32& /*param2*/) const {}
     // called before effect execution
     virtual void OnEffectExecute(Spell* /*spell*/, SpellEffectIndex /*effIdx*/) const {}
     // called in targeting to determine radius for spell
@@ -124,7 +124,7 @@ struct AuraScript
     virtual void OnPersistentAreaAuraEnd(DynamicObject* /*dynGo*/) const {}
     // called on unit heartbeat
     virtual void OnHeartbeat(Aura* /*aura*/) const {}
-    // used to override SPELL_AURA_TRANSFORM display id - more uses in future
+    // used to override SPELL_AURA_TRANSFORM or SPELL_AURA_MOD_SHAPESHIFT display id - more uses in future
     virtual uint32 GetAuraScriptCustomizationValue(Aura* /*aura*/) const { return 0; }
 };
 

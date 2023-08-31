@@ -601,8 +601,8 @@ void AreaAura::Update(uint32 diff)
                 }
                 case AREA_AURA_FRIEND:
                 {
-                    MaNGOS::AnyFriendlyUnitInObjectRangeCheck u_check(caster, nullptr, m_radius, GetSpellProto()->HasAttribute(SPELL_ATTR_EX6_IGNORE_PHASE_SHIFT));
-                    MaNGOS::UnitListSearcher<MaNGOS::AnyFriendlyUnitInObjectRangeCheck> searcher(targets, u_check);
+                    MaNGOS::AnySpellAssistableUnitInObjectRangeCheck u_check(caster, nullptr, m_radius, GetSpellProto()->HasAttribute(SPELL_ATTR_EX6_IGNORE_PHASE_SHIFT));
+                    MaNGOS::UnitListSearcher<MaNGOS::AnySpellAssistableUnitInObjectRangeCheck> searcher(targets, u_check);
                     Cell::VisitAllObjects(caster, searcher, m_radius);
                     break;
                 }
@@ -1959,17 +1959,6 @@ void Aura::TriggerSpell()
             }
             case 32930:                                     // Blue beam
                 return; // Never seems to go off in sniffs - hides errors
-            /*case 30502:                                   // Dark Spin - Only Effect0 s.30505 should be affect, else s.30508 doesnt work anymore
-            {
-                if (GetCaster()->GetTypeId() != TYPEID_UNIT)
-                    return;
-
-                triggerTarget = ((Creature*)GetCaster())->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0, trigger_spell_id, SELECT_FLAG_PLAYER);
-                if (!triggerTarget)
-                    return;
-
-                break;
-            }*/
             case 36716:                                     // Energy Discharge
             case 38828:
             {
@@ -3258,32 +3247,36 @@ void Aura::HandleAuraModShapeshift(bool apply, bool Real)
 
     Unit* target = GetTarget();
 
+    uint32 displayId = 0;
     if (ssEntry->modelID_A)
     {
         // i will asume that creatures will always take the defined model from the dbc
         // since no field in creature_templates describes wether an alliance or
         // horde modelid should be used at shapeshifting
         if (target->GetTypeId() != TYPEID_PLAYER)
-            m_modifier.m_amount = ssEntry->modelID_A;
+            displayId = ssEntry->modelID_A;
         else
         {
             // players are a bit different since the dbc has seldomly an horde modelid
             if (Player::TeamForRace(target->getRace()) == HORDE)
             {
                 // get model for race ( in 2.2.4 no horde models in dbc field, only 0 in it
-                m_modifier.m_amount = sObjectMgr.GetModelForRace(ssEntry->modelID_A, target->getRaceMask());
+                displayId = sObjectMgr.GetModelForRace(ssEntry->modelID_A, target->getRaceMask());
             }
 
             // nothing found in above, so use default
-            if (!m_modifier.m_amount)
-                m_modifier.m_amount = ssEntry->modelID_A;
+            if (!displayId)
+                displayId = ssEntry->modelID_A;
         }
     }
+
+    if (uint32 overrideDisplayId = GetAuraScriptCustomizationValue()) // from script
+        displayId = overrideDisplayId;
 
     switch (GetId())
     {
         case 35200: // Roc Form
-            m_modifier.m_amount = 4877;
+            displayId = 4877;
             break;
     }
 
@@ -3370,8 +3363,8 @@ void Aura::HandleAuraModShapeshift(bool apply, bool Real)
         // remove other shapeshift before applying a new one
         target->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT, GetHolder());
 
-        if (m_modifier.m_amount > 0)
-            target->SetDisplayId(m_modifier.m_amount);
+        if (displayId > 0)
+            target->SetDisplayId(displayId);
 
         // now only powertype must be set
         switch (form)
@@ -6534,9 +6527,6 @@ void Aura::HandleAuraModPacifyAndSilence(bool apply, bool Real)
 {
     HandleAuraModPacify(apply, Real);
     HandleAuraModSilence(apply, Real);
-    if (!apply && GetId() == 42354) // Anzu - Banish
-        if (UnitAI* ai = GetTarget()->AI())
-            ai->SendAIEvent(AI_EVENT_CUSTOM_A, GetTarget(), GetTarget());
 }
 
 void Aura::HandleAuraGhost(bool apply, bool /*Real*/)
@@ -7919,10 +7909,34 @@ void SpellAuraHolder::_AddSpellAuraHolder()
         }
     }
 
+    if (slot >= MAX_AURAS)
+    {
+        uint32 theoreticalSlot = MAX_AURAS;
+        std::set<uint32> freeSlot;
+        for (auto& data : m_target->GetSpellAuraHolderMap())
+        {
+            SpellAuraHolder* holder = data.second;
+            if (holder->GetAuraSlot() >= MAX_AURAS)
+                freeSlot.insert(holder->GetAuraSlot());
+        }
+        for (uint32 slot : freeSlot)
+        {
+            // set is sorted so this should yield first empty
+            if (theoreticalSlot == slot)
+                theoreticalSlot++;
+            else
+                break;
+        }
+        // slot is uint8 - avoid shenanigans - 56 max visible auras - 255 max all auras
+        if (theoreticalSlot > NULL_AURA_SLOT)
+            theoreticalSlot = NULL_AURA_SLOT;
+        slot = theoreticalSlot;
+    }
+
     SetAuraSlot(slot);
 
     // Not update fields for not first spell's aura, all data already in fields
-    if (slot < MAX_AURAS)                                   // slot found
+    if (slot < MAX_AURAS) // slot found
     {
         SetAura(slot, false);
         SetAuraFlag(slot, true);
@@ -7931,9 +7945,9 @@ void SpellAuraHolder::_AddSpellAuraHolder()
 
         // update for out of range group members
         m_target->UpdateAuraForGroup(slot);
-
-        UpdateAuraDuration();
     }
+
+    UpdateAuraDuration();
 
     //*****************************************************
     // Update target aura state flag (at 1 aura apply)
@@ -8742,55 +8756,78 @@ void SpellAuraHolder::ClearExtraAuraInfo(Unit* caster)
 
 void SpellAuraHolder::UpdateAuraDuration()
 {
-    if (GetAuraSlot() >= MAX_AURAS || m_isPassive)
-        return;
-
-    if (m_target->IsPlayer())
-    {
-        if (!GetSpellProto()->HasAttribute(SPELL_ATTR_EX5_DO_NOT_DISPLAY_DURATION))
-        {
-            WorldPacket data(SMSG_UPDATE_AURA_DURATION, 5);
-            data << uint8(GetAuraSlot());
-            data << uint32(GetAuraDuration());
-            static_cast<Player*>(m_target)->SendDirectMessage(data);
-
-            SendAuraDurationForTarget();
-        }
-    }
-
-    // not send in case player loading (will not work anyway until player not added to map), sent in visibility change code
-    if (m_target->GetTypeId() == TYPEID_PLAYER && static_cast<Player*>(m_target)->GetSession()->PlayerLoading())
+    // not send in case player loading - on load is sent differently
+    if (m_target->IsPlayer() && static_cast<Player*>(m_target)->GetSession()->PlayerLoading())
         return;
 
     Unit* caster = GetCaster();
 
-    if (caster && caster->GetTypeId() == TYPEID_PLAYER && caster != m_target)
-        SendAuraDurationForCaster(static_cast<Player*>(caster));
+    if (!GetSpellProto()->HasAttribute(SPELL_ATTR_EX5_DO_NOT_DISPLAY_DURATION))
+    {
+        // if caster == target and player, meant to get both
+        if (GetAuraSlot() < MAX_AURAS) // only visible auras
+            SendAuraDuration();       
+
+        if (caster && caster->IsPlayer())
+            SendAuraDurationToCaster(static_cast<Player*>(caster));
+    }
 }
 
-void SpellAuraHolder::SendAuraDurationForTarget(uint32 slot)
+void SpellAuraHolder::LoginAuraDuration()
+{
+    // target is currently logging in player and only send what he needs
+    SendAuraDuration();
+    if (m_casterGuid == m_target->GetObjectGuid()) // no need to fetch caster - must only send if they are the same anyway
+        SendAuraDurationToCaster(static_cast<Player*>(m_target));
+}
+
+void SpellAuraHolder::ForceUpdateAuraDuration()
+{
+    if (GetAuraSlot() >= MAX_AURAS)
+        return;
+
+    Unit* caster = GetCaster();
+    if (!GetSpellProto()->HasAttribute(SPELL_ATTR_EX5_DO_NOT_DISPLAY_DURATION))
+    {
+        // if caster == target and player, meant to get both
+        SendAuraDuration();
+
+        if (caster && caster->IsPlayer())
+            SendAuraDurationToCasterNeedUpdate(static_cast<Player*>(caster));
+    }
+}
+
+void SpellAuraHolder::SendAuraDuration()
+{
+    if (!m_target->IsPlayer())
+        return;
+
+    WorldPacket data(SMSG_UPDATE_AURA_DURATION, 5);
+    data << uint8(GetAuraSlot());
+    data << uint32(GetAuraMaxDuration() == -1 ? 0 : GetAuraDuration());
+    static_cast<Player*>(m_target)->SendDirectMessage(data);
+}
+
+void SpellAuraHolder::SendAuraDurationToCaster(Player* caster, uint32 slot)
 {
     WorldPacket data(SMSG_SET_EXTRA_AURA_INFO, (8 + 1 + 4 + 4 + 4));
     data << m_target->GetPackGUID();
     data << uint8(slot == MAX_AURAS ? GetAuraSlot() : slot);
     data << uint32(GetId());
-    data << uint32(GetAuraMaxDuration());
-    data << uint32(GetAuraDuration());
+    data << int32(GetAuraMaxDuration());
+    data << uint32(GetAuraMaxDuration() == -1 ? 0 : GetAuraDuration());
 
-    static_cast<Player*>(m_target)->SendDirectMessage(data);
+    caster->SendDirectMessage(data);
 }
 
-void SpellAuraHolder::SendAuraDurationForCaster(Player* caster)
+void SpellAuraHolder::SendAuraDurationToCasterNeedUpdate(Player* caster)
 {
     WorldPacket data(SMSG_SET_EXTRA_AURA_INFO_NEED_UPDATE, (8 + 1 + 4 + 4 + 4));
     data << m_target->GetPackGUID();
     data << uint8(GetAuraSlot());
     data << uint32(GetId());
-    if (!GetSpellProto()->HasAttribute(SPELL_ATTR_EX5_DO_NOT_DISPLAY_DURATION))
-    {
-        data << uint32(GetAuraMaxDuration());                   // full
-        data << uint32(GetAuraDuration());                      // remain
-    }
+    data << int32(GetAuraMaxDuration());                   // full
+    data << uint32(GetAuraMaxDuration() == -1 ? 0 : GetAuraDuration()); // remain
     caster->GetSession()->SendPacket(data);
 }
 

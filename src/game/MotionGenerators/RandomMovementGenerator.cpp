@@ -134,7 +134,7 @@ int32 AbstractRandomMovementGenerator::_setLocation(Unit& owner)
     init.SetWalk(i_walk);
 
     if (owner.IsSlowedInCombat())
-        init.SetCombatSlowed();
+        init.SetCombatSlowed(std::min(owner.GetHealthPercent(), 20.f) * 0.02 + 0.4f);
 
     int32 duration = init.Launch();
 
@@ -188,6 +188,19 @@ void WanderMovementGenerator::Interrupt(Unit& owner)
 
     if (owner.GetTypeId() == TYPEID_UNIT)
         static_cast<Creature&>(owner).SetWalk(!owner.hasUnitState(UNIT_STAT_RUNNING_STATE), false);
+}
+
+void WanderMovementGenerator::AddToRandomPauseTime(int32 waitTimeDiff, bool force)
+{
+    if (force)
+        i_nextMoveTimer.Reset(waitTimeDiff);
+    else if (!i_nextMoveTimer.Passed())
+    {
+        // creature is stopped already
+        // Prevent <= 0, the code in Update requires to catch the change from moving to not moving
+        int32 newWaitTime = i_nextMoveTimer.GetExpiry() + waitTimeDiff;
+        i_nextMoveTimer.Reset(newWaitTime > 0 ? newWaitTime : 1);
+    }
 }
 
 TimedWanderMovementGenerator::TimedWanderMovementGenerator(Creature const& npc, uint32 timer, float radius, float verticalZ)

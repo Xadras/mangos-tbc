@@ -298,7 +298,13 @@ void npc_escortAI::Start(bool run, const Player* player, const Quest* quest, boo
 
 void npc_escortAI::End()
 {
+    RemoveEscortState(STATE_ESCORT_ESCORTING);
     m_playerGuid = ObjectGuid();
+    m_questForEscort = nullptr;
+}
+
+void npc_escortAI::QuestEnd()
+{
     m_questForEscort = nullptr;
 }
 

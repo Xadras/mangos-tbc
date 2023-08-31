@@ -826,7 +826,7 @@ bool Player::Create(uint32 guidlow, const std::string& name, uint8 race, uint8 c
     SetUInt32Value(PLAYER_CHOSEN_TITLE, 0);
 
     SetUInt32Value(PLAYER_FIELD_KILLS, 0);
-    SetUInt32Value(PLAYER_FIELD_LIFETIME_HONORBALE_KILLS, 0);
+    SetUInt32Value(PLAYER_FIELD_LIFETIME_HONORABLE_KILLS, 0);
     SetUInt32Value(PLAYER_FIELD_TODAY_CONTRIBUTION, 0);
     SetUInt32Value(PLAYER_FIELD_YESTERDAY_CONTRIBUTION, 0);
 
@@ -4093,6 +4093,11 @@ TrainerSpellState Player::GetTrainerSpellState(TrainerSpell const* trainer_spell
         if (trainer_spell->reqSkill && GetSkillValueBase(trainer_spell->reqSkill) < trainer_spell->reqSkillValue)
             return TRAINER_SPELL_RED;
 
+    for (uint32 i = 0; i < 3; ++i)
+        if (trainer_spell->reqAbility[i])
+            if (!HasSpell(*trainer_spell->reqAbility[i]))
+                return TRAINER_SPELL_RED;
+
     // exist, already checked at loading
     SpellEntry const* spell = sSpellTemplate.LookupEntry<SpellEntry>(trainer_spell->learnedSpell);
 
@@ -5875,7 +5880,7 @@ void Player::UpdateSkillTrainedSpells(uint16 id, uint16 currVal)
             // Update training: skill removal mode, wipe all dependent spells regardless of training method
             if (!currVal)
             {
-                removeSpell(pAbility->spellId, false, false, false);
+                removeSpell(pAbility->spellId, false, false, true);
                 continue;
             }
 
@@ -6775,7 +6780,7 @@ bool Player::RewardHonor(Unit* uVictim, uint32 groupsize, float honor)
             // count the number of playerkills in one day
             ApplyModUInt32Value(PLAYER_FIELD_KILLS, 1, true);
             // and those in a lifetime
-            ApplyModUInt32Value(PLAYER_FIELD_LIFETIME_HONORBALE_KILLS, 1, true);
+            ApplyModUInt32Value(PLAYER_FIELD_LIFETIME_HONORABLE_KILLS, 1, true);
         }
         else
         {
@@ -12595,9 +12600,9 @@ void Player::OnGossipSelect(WorldObject* pSource, uint32 gossipListId, uint32 me
     if (pMenuData && menuData.m_gAction_script)
     {
         if (pSource->GetTypeId() == TYPEID_UNIT)
-            GetMap()->ScriptsStart(sGossipScripts, menuData.m_gAction_script, pSource, this, Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_SOURCE);
+            GetMap()->ScriptsStart(SCRIPT_TYPE_GOSSIP, menuData.m_gAction_script, pSource, this, Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_SOURCE);
         else if (pSource->GetTypeId() == TYPEID_GAMEOBJECT)
-            GetMap()->ScriptsStart(sGossipScripts, menuData.m_gAction_script, this, pSource, Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_TARGET);
+            GetMap()->ScriptsStart(SCRIPT_TYPE_GOSSIP, menuData.m_gAction_script, this, pSource, Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_TARGET);
     }
 }
 
@@ -12639,7 +12644,7 @@ uint32 Player::GetGossipTextId(uint32 menuId, WorldObject* pSource)
 
     // Start related script
     if (scriptId)
-        GetMap()->ScriptsStart(sGossipScripts, scriptId, this, pSource, Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_TARGET);
+        GetMap()->ScriptsStart(SCRIPT_TYPE_GOSSIP, scriptId, this, pSource, Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_TARGET);
 
     return textId;
 }
@@ -13170,7 +13175,7 @@ void Player::AddQuest(Quest const* pQuest, Object* questGiver)
 
         // starting initial DB quest script
         if (pQuest->GetQuestStartScript() != 0)
-            GetMap()->ScriptsStart(sQuestStartScripts, pQuest->GetQuestStartScript(), questGiver, this, Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_SOURCE);
+            GetMap()->ScriptsStart(SCRIPT_TYPE_QUEST_START, pQuest->GetQuestStartScript(), questGiver, this, Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_SOURCE);
     }
 
     // remove start item if not need
@@ -13370,7 +13375,7 @@ void Player::RewardQuest(Quest const* pQuest, uint32 reward, Object* questGiver,
     }
 
     if (!handled && pQuest->GetQuestCompleteScript() != 0)
-        GetMap()->ScriptsStart(sQuestEndScripts, pQuest->GetQuestCompleteScript(), questGiver, this, Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_SOURCE);
+        GetMap()->ScriptsStart(SCRIPT_TYPE_QUEST_END, pQuest->GetQuestCompleteScript(), questGiver, this, Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_SOURCE);
 
     // Find spell cast on spell reward if any, then find the appropriate caster and cast it
     uint32 spellId = pQuest->GetRewSpellCast();
@@ -14679,11 +14684,6 @@ void Player::SendQuestUpdateAddItem(Quest const* pQuest, uint32 item_idx, uint32
     data << pQuest->ReqItemId[item_idx];
     data << count;
     GetSession()->SendPacket(data);
-
-    // Update player field and fire UNIT_QUEST_LOG_CHANGED for self
-    uint16 slot = FindQuestSlot(pQuest->GetQuestId());
-    if (slot < MAX_QUEST_LOG_SIZE)
-        SetQuestSlotCounter(slot, uint8(item_idx), uint8(current + count));
 }
 
 void Player::SendQuestUpdateAddCreatureOrGo(Quest const* pQuest, ObjectGuid guid, uint32 creatureOrGO_idx, uint32 count)
@@ -15057,7 +15057,7 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder)
 
     SetUInt32Value(PLAYER_FIELD_TODAY_CONTRIBUTION, fields[41].GetUInt32());
     SetUInt32Value(PLAYER_FIELD_YESTERDAY_CONTRIBUTION, fields[42].GetUInt32());
-    SetUInt32Value(PLAYER_FIELD_LIFETIME_HONORBALE_KILLS, fields[43].GetUInt32());
+    SetUInt32Value(PLAYER_FIELD_LIFETIME_HONORABLE_KILLS, fields[43].GetUInt32());
     SetUInt16Value(PLAYER_FIELD_KILLS, 0, fields[44].GetUInt16());
     SetUInt16Value(PLAYER_FIELD_KILLS, 1, fields[45].GetUInt16());
 
@@ -16724,7 +16724,7 @@ void Player::SaveToDB()
 
     uberInsert.addUInt32(GetUInt32Value(PLAYER_FIELD_YESTERDAY_CONTRIBUTION));
 
-    uberInsert.addUInt32(GetUInt32Value(PLAYER_FIELD_LIFETIME_HONORBALE_KILLS));
+    uberInsert.addUInt32(GetUInt32Value(PLAYER_FIELD_LIFETIME_HONORABLE_KILLS));
 
     uberInsert.addUInt16(GetUInt16Value(PLAYER_FIELD_KILLS, 0));
 
@@ -17740,7 +17740,7 @@ void Player::PetSpellInitialize() const
 
     data.put<uint8>(spellsCountPos, addlist);
 
-    CharmCooldownInitialize(data);
+    pet->CharmCooldownInitialize(data);
 
     GetSession()->SendPacket(data);
 }
@@ -19532,17 +19532,18 @@ void Player::SendInitialPacketsAfterAddToMap()
             auraList.front()->ApplyModifier(true, true);
     }
 
+    SendAuraDurationsOnLogin();
+
     if (IsImmobilizedState()) // TODO: Figure out if this protocol is correct
         SendMoveRoot(true);
-
-    SendAuraDurationsOnLogin(true);
 
     SendEnchantmentDurations();                             // must be after add to map
     SendItemDurations();                                    // must be after add to map
 
-    CastSpell(this, 836, TRIGGERED_OLD_TRIGGERED);          // LOGINEFFECT
+    CastSpell(this, 836, TRIGGERED_IGNORE_CURRENT_CASTED_SPELL); // LOGINEFFECT
 
-    SendAuraDurationsOnLogin(false);
+    SendExtraAuraDurationsOnLogin(true);
+    SendExtraAuraDurationsOnLogin(false);
 }
 
 void Player::SendUpdateToOutOfRangeGroupMembers()
@@ -19782,18 +19783,25 @@ void Player::SendAuraDurationsForTarget(Unit* target)
         if (holder->GetAuraSlot() >= MAX_AURAS || holder->IsPassive() || holder->GetCasterGuid() != GetObjectGuid())
             continue;
 
-        holder->SendAuraDurationForCaster(this);
+        holder->SendAuraDurationToCaster(this);
     }
 }
 
-void Player::SendAuraDurationsOnLogin(bool visible)
+void Player::SendAuraDurationsOnLogin()
 {
-    if (!visible)
+    for (auto& data : GetSpellAuraHolderMap())
     {
-        WorldPacket data(SMSG_SET_EXTRA_AURA_INFO, 8);
-        data << GetPackGUID();
-        SendDirectMessage(data);
+        SpellAuraHolder* holder = data.second;
+        if (holder->GetAuraSlot() >= MAX_AURAS)
+            continue;
+
+        holder->LoginAuraDuration();
     }
+}
+
+void Player::SendExtraAuraDurationsOnLogin(bool visible)
+{
+    std::vector<SpellAuraHolder*> holders;
 
     uint32 counter = MAX_AURAS;
     SpellAuraHolderMap const& auraHolders = GetSpellAuraHolderMap();
@@ -19813,8 +19821,28 @@ void Player::SendAuraDurationsOnLogin(bool visible)
                 continue;
         }
 
-        holder->SendAuraDurationForTarget(!visible ? counter : MAX_AURAS);
+        holders.push_back(holder);
         ++counter;
+    }
+
+    if (!visible) // slots >= 56 are sent as singles
+    {
+        std::sort(holders.begin(), holders.end(), [](SpellAuraHolder* left, SpellAuraHolder* right) { return left->GetAuraSlot() < right->GetAuraSlot(); });
+        for (SpellAuraHolder* holder : holders)
+            holder->SendAuraDurationToCaster(this);
+    }
+    else // visible slots (<= 56) are sent in a single packet
+    {
+        WorldPacket data(SMSG_INIT_EXTRA_AURA_INFO, (8 + (1 + 4 + 4 + 4) * holders.size()));
+        data << GetPackGUID();
+        for (SpellAuraHolder* holder : holders)
+        {
+            data << uint8(holder->GetAuraSlot());
+            data << uint32(holder->GetId());
+            data << int32(holder->GetAuraMaxDuration());
+            data << uint32(holder->GetAuraMaxDuration() == -1 ? 0 : holder->GetAuraDuration());
+        }
+        SendDirectMessage(data);
     }
 }
 
@@ -20340,7 +20368,7 @@ bool Player::isHonorOrXPTarget(Unit* pVictim) const
     {
         Creature* npc = static_cast<Creature*>(pVictim);
 
-        if (npc->IsTotem() || npc->IsPet() || npc->GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_NO_XP_AT_KILL)
+        if (npc->IsTotem() || npc->IsPet() || npc->IsNoXp())
             return false;
     }
     return true;
@@ -21750,11 +21778,11 @@ void Player::AddGCD(SpellEntry const& spellEntry, uint32 /*forcedDuration = 0*/,
     GetSession()->SendPacket(data);
 }
 
-void Player::AddCooldown(SpellEntry const& spellEntry, ItemPrototype const* itemProto /*= nullptr*/, bool permanent /*= false*/, uint32 forcedDuration /*= 0*/)
+void Player::AddCooldown(SpellEntry const& spellEntry, ItemPrototype const* itemProto /*= nullptr*/, bool permanent /*= false*/, uint32 forcedDuration /*= 0*/, bool ignoreCat /*= false*/)
 {
     uint32 spellCategory = spellEntry.Category;
     uint32 recTime = spellEntry.RecoveryTime; // int because of spellmod calculations
-    uint32 categoryRecTime = spellEntry.CategoryRecoveryTime; // int because of spellmod calculations
+    uint32 categoryRecTime = ignoreCat ? 0 : spellEntry.CategoryRecoveryTime; // int because of spellmod calculations
     uint32 itemId = 0;
 
     auto pickCooldowns = [&](ItemPrototype const* itemProto)

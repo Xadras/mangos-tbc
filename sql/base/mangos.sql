@@ -23,7 +23,7 @@ DROP TABLE IF EXISTS `db_version`;
 CREATE TABLE `db_version` (
   `version` varchar(120) DEFAULT NULL,
   `creature_ai_version` varchar(120) DEFAULT NULL,
-  `required_s2457_01_mangos_reference_loot_template_names` bit(1) DEFAULT NULL
+  `required_s2471_01_mangos_pursuit` bit(1) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='Used DB version notes';
 
 --
@@ -455,6 +455,10 @@ INSERT INTO `command` VALUES
 ('debug arena',3,'Syntax: .debug arena\r\n\r\nToggle debug mode for arenas. In debug mode GM can start arena with single player.'),
 ('debug areatriggers', 1, 'Syntax: .debug areatriggers\n\nToggle debug mode for areatriggers. In debug mode GM will be notified if reaching an areatrigger.'),
 ('debug bg',3,'Syntax: .debug bg\r\n\r\nToggle debug mode for battlegrounds. In debug mode GM can start battleground with single player.'),
+('debug dbscript',3,'.debug dbscript\r\n\r\nStarts dbscript type param0 id param1 from player(source) to selected(target)'),
+('debug dbscripttargeted',3,'.debug dbscript\r\n\r\nStarts dbscript type param0 id param1 from selected(source) to param2 dbguid(target creature)'),
+('debug dbscriptsourced',3,'.debug dbscript\r\n\r\nStarts dbscript type param0 id param1 from param2 dbguid(source creature) to selected(target)'),
+('debug dbscriptguided',3,'.debug dbscript\r\n\r\nStarts dbscript type param0 id param1 from param2 dbguid(source creature) to param3 dbguid(target creature)'),
 ('debug getitemvalue',3,'Syntax: .debug getitemvalue #itemguid #field [int|hex|bit|float]\r\n\r\nGet the field #field of the item #itemguid in your inventroy.\r\n\r\nUse type arg for set output format: int (decimal number), hex (hex value), bit (bitstring), float. By default use integer output.'),
 ('debug getvaluebyindex', 3, 'Syntax: .debug getvaluebyindex #field [int|hex|bit|float]\r\n\r\nGet the field index #field (integer) of the selected target. If no target is selected, get the content of your field.\r\n\r\nUse type arg for set output format: int (decimal number), hex (hex value), bit (bitstring), float. By default use integer output.'),
 ('debug getvaluebyname', 3, 'Syntax: .debug getvaluebyname #field [int|hex|bit|float]\r\n\r\nGet the field name #field (string) of the selected target. If no target is selected, get the content of your field.\r\n\r\nUse type arg for set output format: int (decimal number), hex (hex value), bit (bitstring), float. By default use integer output.'),
@@ -757,8 +761,6 @@ CREATE TABLE `creature` (
   `id` mediumint(8) unsigned NOT NULL DEFAULT '0' COMMENT 'Creature Identifier',
   `map` smallint(5) unsigned NOT NULL DEFAULT '0' COMMENT 'Map Identifier',
   `spawnMask` tinyint(3) unsigned NOT NULL DEFAULT '1',
-  `modelid` mediumint(8) unsigned NOT NULL DEFAULT '0',
-  `equipment_id` mediumint(9) NOT NULL DEFAULT '0',
   `position_x` float NOT NULL DEFAULT '0',
   `position_y` float NOT NULL DEFAULT '0',
   `position_z` float NOT NULL DEFAULT '0',
@@ -766,10 +768,6 @@ CREATE TABLE `creature` (
   `spawntimesecsmin` int(10) unsigned NOT NULL DEFAULT '120' COMMENT 'Creature respawn time minimum',
   `spawntimesecsmax` int(10) unsigned NOT NULL DEFAULT '120' COMMENT 'Creature respawn time maximum',
   `spawndist` float NOT NULL DEFAULT '5',
-  `currentwaypoint` mediumint(8) unsigned NOT NULL DEFAULT '0',
-  `curhealth` int(10) unsigned NOT NULL DEFAULT '1',
-  `curmana` int(10) unsigned NOT NULL DEFAULT '0',
-  `DeathState` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `MovementType` tinyint(3) unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`guid`),
   KEY `idx_map` (`map`),
@@ -793,9 +791,8 @@ DROP TABLE IF EXISTS `creature_addon`;
 CREATE TABLE `creature_addon` (
   `guid` int(10) unsigned NOT NULL DEFAULT '0',
   `mount` mediumint(8) unsigned NOT NULL DEFAULT '0',
-  `bytes1` int(10) unsigned NOT NULL DEFAULT '0',
-  `b2_0_sheath` tinyint(3) unsigned NOT NULL DEFAULT '0',
-  `b2_1_flags` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `stand_state` TINYINT(3) UNSIGNED NOT NULL DEFAULT '0',
+  `sheath_state` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `emote` int(10) unsigned NOT NULL DEFAULT '0',
   `moveflags` int(10) unsigned NOT NULL DEFAULT '0',
   `auras` text,
@@ -880,40 +877,6 @@ LOCK TABLES `creature_ai_summons` WRITE;
 UNLOCK TABLES;
 
 --
--- Table structure for table `creature_ai_texts`
---
-
-DROP TABLE IF EXISTS `creature_ai_texts`;
-CREATE TABLE `creature_ai_texts` (
-  `entry` mediumint(8) NOT NULL,
-  `content_default` text NOT NULL,
-  `content_loc1` text,
-  `content_loc2` text,
-  `content_loc3` text,
-  `content_loc4` text,
-  `content_loc5` text,
-  `content_loc6` text,
-  `content_loc7` text,
-  `content_loc8` text,
-  `sound` mediumint(8) unsigned NOT NULL DEFAULT '0',
-  `type` tinyint(3) unsigned NOT NULL DEFAULT '0',
-  `language` tinyint(3) unsigned NOT NULL DEFAULT '0',
-  `emote` smallint(5) unsigned NOT NULL DEFAULT '0',
-  `broadcast_text_id` INT(11) NOT NULL DEFAULT '0',
-  `comment` text,
-  PRIMARY KEY (`entry`)
-) ENGINE=MyISAM DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='Script Texts';
-
---
--- Dumping data for table `creature_ai_texts`
---
-
-LOCK TABLES `creature_ai_texts` WRITE;
-/*!40000 ALTER TABLE `creature_ai_texts` DISABLE KEYS */;
-/*!40000 ALTER TABLE `creature_ai_texts` ENABLE KEYS */;
-UNLOCK TABLES;
-
---
 -- Table structure for table `creature_battleground`
 --
 
@@ -987,11 +950,13 @@ CREATE TABLE `creature_spawn_data_template` (
   `UnitFlags` bigint NOT NULL DEFAULT '-1',
   `Faction` int unsigned NOT NULL DEFAULT '0',
   `ModelId` mediumint unsigned NOT NULL DEFAULT '0',
-  `EquipmentId` mediumint NOT NULL DEFAULT '0',
+  `EquipmentId` mediumint NOT NULL DEFAULT '-1',
   `CurHealth` int unsigned NOT NULL DEFAULT '0',
   `CurMana` int unsigned NOT NULL DEFAULT '0',
   `SpawnFlags` int unsigned NOT NULL DEFAULT '0',
   `RelayId` int unsigned NOT NULL DEFAULT '0',
+  `StringId` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+  `Name` VARCHAR(200) NOT NULL,
   PRIMARY KEY (`Entry`,`UnitFlags`,`ModelId`,`EquipmentId`,`CurHealth`,`CurMana`,`SpawnFlags`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='Creature System (Spawn Data Template)';
 
@@ -1367,11 +1332,15 @@ CREATE TABLE `creature_template` (
   `DynamicFlags` int(10) unsigned NOT NULL DEFAULT '0',
   `ExtraFlags` int(10) unsigned NOT NULL DEFAULT '0',
   `CreatureTypeFlags` int(10) unsigned NOT NULL DEFAULT '0',
+  `StaticFlags1` INT UNSIGNED NOT NULL DEFAULT 0,
+  `StaticFlags2` INT UNSIGNED NOT NULL DEFAULT 0,
+  `StaticFlags3` INT UNSIGNED NOT NULL DEFAULT 0,
+  `StaticFlags4` INT UNSIGNED NOT NULL DEFAULT 0,
   `SpeedWalk` float NOT NULL DEFAULT '0',
   `SpeedRun` float NOT NULL DEFAULT '0',
   `Detection` INT(10) UNSIGNED NOT NULL DEFAULT '18' COMMENT 'Detection range for proximity',
   `CallForHelp` INT(10) UNSIGNED NOT NULL DEFAULT '0' COMMENT 'Range in which creature calls for help?',
-  `Pursuit` INT(10) UNSIGNED NOT NULL DEFAULT '0' COMMENT 'When exceeded during pursuit creature evades?',
+  `Pursuit` INT(10) UNSIGNED NOT NULL DEFAULT '15000' COMMENT 'Hit refresh time after which creature evades',
   `Leash` INT(10) UNSIGNED NOT NULL DEFAULT '0' COMMENT 'Leash range from combat start position',
   `Timeout` INT(10) UNSIGNED NOT NULL DEFAULT '0' COMMENT 'Time for refreshing leashing before evade?',
   `UnitClass` tinyint(3) unsigned NOT NULL DEFAULT '0',
@@ -1423,9 +1392,10 @@ CREATE TABLE `creature_template` (
   `EquipmentTemplateId` mediumint(8) unsigned NOT NULL DEFAULT '0',
   `GossipMenuId` mediumint(8) unsigned NOT NULL DEFAULT '0',
   `InteractionPauseTimer` INT(10) NOT NULL DEFAULT -1,
-  `VisibilityDistanceType` TINYINT NOT NULL DEFAULT '0',
   `CorpseDecay` INT UNSIGNED NOT NULL DEFAULT '0' COMMENT 'Time before corpse despawns',
   `SpellList` INT NOT NULL DEFAULT '0' COMMENT 'creature_spell_list_entry',
+  `StringId1` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+  `StringId2` INT(11) UNSIGNED NOT NULL DEFAULT '0',
   `AIName` char(64) NOT NULL DEFAULT '',
   `ScriptName` char(64) NOT NULL DEFAULT '',
   PRIMARY KEY (`entry`)
@@ -1438,7 +1408,7 @@ CREATE TABLE `creature_template` (
 LOCK TABLES `creature_template` WRITE;
 /*!40000 ALTER TABLE `creature_template` DISABLE KEYS */;
 INSERT INTO `creature_template` VALUES
-(1,'Waypoint (Only GM can see it)','Visual',NULL,1,1,0,10045,0,0,0,35,1,8,8,1,1,0,0,4096,0,130,5242886,0.91,1.14286,20,0,0,0,0,0,0,-1,1,1,1,1,1,1,8,8,0,0,7,7,1.76,2.42,0,3,100,2000,2200,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,'','');
+(1,'Waypoint (Only GM can see it)','Visual',NULL,1,1,0,10045,0,0,0,35,1,8,8,1,1,0,0,4096,0,130,5242886,0,0,0,0,0.91,1.14286,20,0,0,0,0,0,0,-1,1,1,1,1,1,1,8,8,0,0,7,7,1.76,2.42,0,3,100,2000,2200,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,'','');
 /*!40000 ALTER TABLE `creature_template` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -1450,9 +1420,8 @@ DROP TABLE IF EXISTS `creature_template_addon`;
 CREATE TABLE `creature_template_addon` (
   `entry` mediumint(8) unsigned NOT NULL DEFAULT '0',
   `mount` mediumint(8) unsigned NOT NULL DEFAULT '0',
-  `bytes1` int(10) unsigned NOT NULL DEFAULT '0',
-  `b2_0_sheath` tinyint(3) unsigned NOT NULL DEFAULT '0',
-  `b2_1_flags` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `stand_state` TINYINT(3) UNSIGNED NOT NULL DEFAULT '0',
+  `sheath_state` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `emote` mediumint(8) unsigned NOT NULL DEFAULT '0',
   `moveflags` int(10) unsigned NOT NULL DEFAULT '0',
   `auras` text,
@@ -1522,6 +1491,7 @@ Id INT NOT NULL COMMENT 'List ID',
 Position INT NOT NULL COMMENT 'Position on list',
 SpellId INT NOT NULL COMMENT 'Spell ID',
 Flags INT NOT NULL COMMENT 'Spell Flags',
+`CombatCondition` INT(11) NOT NULL DEFAULT -1,
 TargetId INT NOT NULL COMMENT 'Targeting ID',
 ScriptId INT NOT NULL COMMENT 'Dbscript to be launched on success',
 Availability INT NOT NULL COMMENT 'Chance on spawn for spell to be included',
@@ -1541,6 +1511,7 @@ Type INT NOT NULL COMMENT 'Type of targeting ID',
 Param1 INT NOT NULL COMMENT 'First parameter',
 Param2 INT NOT NULL COMMENT 'Second parameter',
 Param3 INT NOT NULL COMMENT 'Third parameter',
+`UnitCondition` INT(11) NOT NULL DEFAULT -1,
 Comments VARCHAR(255) NOT NULL COMMENT 'Description of target',
 PRIMARY KEY(Id)
 );
@@ -1599,40 +1570,6 @@ CREATE TABLE `custom_texts` (
 LOCK TABLES `custom_texts` WRITE;
 /*!40000 ALTER TABLE `custom_texts` DISABLE KEYS */;
 /*!40000 ALTER TABLE `custom_texts` ENABLE KEYS */;
-UNLOCK TABLES;
-
---
--- Table structure for table `dbscript_string`
---
-
-DROP TABLE IF EXISTS `dbscript_string`;
-CREATE TABLE `dbscript_string` (
-  `entry` int(11) unsigned NOT NULL DEFAULT '0',
-  `content_default` text NOT NULL,
-  `content_loc1` text,
-  `content_loc2` text,
-  `content_loc3` text,
-  `content_loc4` text,
-  `content_loc5` text,
-  `content_loc6` text,
-  `content_loc7` text,
-  `content_loc8` text,
-  `sound` mediumint(8) unsigned NOT NULL DEFAULT '0',
-  `type` tinyint(3) unsigned NOT NULL DEFAULT '0',
-  `language` tinyint(3) unsigned NOT NULL DEFAULT '0',
-  `emote` smallint(5) unsigned NOT NULL DEFAULT '0',
-  `broadcast_text_id` INT(11) NOT NULL DEFAULT '0',
-  `comment` text,
-  PRIMARY KEY (`entry`)
-) ENGINE=MyISAM DEFAULT CHARSET=utf8;
-
---
--- Dumping data for table `dbscript_string`
---
-
-LOCK TABLES `dbscript_string` WRITE;
-/*!40000 ALTER TABLE `dbscript_string` DISABLE KEYS */;
-/*!40000 ALTER TABLE `dbscript_string` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --
@@ -1708,26 +1645,6 @@ CREATE TABLE `dbscript_random_templates` (
   `comments` VARCHAR(500) DEFAULT '',
   PRIMARY KEY (`id`,`type`,`target_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 ROW_FORMAT=COMPACT COMMENT='DBScript system';
-
---
--- Table structure for table `dbscript_string_template`
---
-
-DROP TABLE IF EXISTS `dbscript_string_template`;
-CREATE TABLE `dbscript_string_template` (
-  `id` int(11) unsigned NOT NULL COMMENT 'Id of template' AUTO_INCREMENT,
-  `string_id` int(11) NOT NULL DEFAULT '0' COMMENT 'dbscript_string id',
-  PRIMARY KEY (`id`,`string_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 ROW_FORMAT=COMPACT COMMENT='DBScript system';
-
---
--- Dumping data for table `dbscript_string_template`
---
-
-LOCK TABLES `dbscript_string_template` WRITE;
-/*!40000 ALTER TABLE `dbscript_string_template` DISABLE KEYS */;
-/*!40000 ALTER TABLE `dbscript_string_template` ENABLE KEYS */;
-UNLOCK TABLES;
 
 --
 -- Table structure for table `disenchant_loot_template`
@@ -2113,8 +2030,6 @@ CREATE TABLE `gameobject` (
   `rotation3` float NOT NULL DEFAULT '0',
   `spawntimesecsmin` int(11) NOT NULL DEFAULT '0' COMMENT 'GameObject respawn time minimum',
   `spawntimesecsmax` int(11) NOT NULL DEFAULT '0' COMMENT 'Gameobject respawn time maximum',
-  `animprogress` tinyint(3) unsigned NOT NULL DEFAULT '0',
-  `state` tinyint(3) unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`guid`),
   KEY `idx_map` (`map`),
   KEY `idx_id` (`id`)
@@ -2128,6 +2043,15 @@ LOCK TABLES `gameobject` WRITE;
 /*!40000 ALTER TABLE `gameobject` DISABLE KEYS */;
 /*!40000 ALTER TABLE `gameobject` ENABLE KEYS */;
 UNLOCK TABLES;
+
+DROP TABLE IF EXISTS `gameobject_addon`;
+CREATE TABLE `gameobject_addon` (
+  `guid` int(10) unsigned NOT NULL DEFAULT '0',
+  `animprogress` TINYINT(3) UNSIGNED NOT NULL DEFAULT '100',
+  `state` TINYINT(3) NOT NULL DEFAULT -1,
+  `StringId` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+  PRIMARY KEY(`guid`)
+);
 
 DROP TABLE IF EXISTS `gameobject_spawn_entry`;
 CREATE TABLE `gameobject_spawn_entry`(
@@ -2266,6 +2190,7 @@ CREATE TABLE `gameobject_template` (
   `CustomData1` int(10) unsigned NOT NULL DEFAULT '0',
   `mingold` mediumint(8) unsigned NOT NULL DEFAULT '0',
   `maxgold` mediumint(8) unsigned NOT NULL DEFAULT '0',
+  `StringId` INT(11) UNSIGNED NOT NULL DEFAULT '0',
   `ScriptName` varchar(64) NOT NULL DEFAULT '',
   PRIMARY KEY (`entry`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='Gameobject System';
@@ -4902,6 +4827,9 @@ CREATE TABLE `npc_trainer` (
   `reqskill` smallint(5) unsigned NOT NULL DEFAULT '0',
   `reqskillvalue` smallint(5) unsigned NOT NULL DEFAULT '0',
   `reqlevel` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `ReqAbility1` INT(11) UNSIGNED DEFAULT NULL,
+  `ReqAbility2` INT(11) UNSIGNED DEFAULT NULL,
+  `ReqAbility3` INT(11) UNSIGNED DEFAULT NULL,
   `condition_id` INT(11) unsigned NOT NULL default '0',
   UNIQUE KEY `entry_spell` (`entry`,`spell`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
@@ -4927,6 +4855,9 @@ CREATE TABLE `npc_trainer_template` (
   `reqskill` smallint(5) unsigned NOT NULL DEFAULT '0',
   `reqskillvalue` smallint(5) unsigned NOT NULL DEFAULT '0',
   `reqlevel` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `ReqAbility1` INT(11) UNSIGNED DEFAULT NULL,
+  `ReqAbility2` INT(11) UNSIGNED DEFAULT NULL,
+  `ReqAbility3` INT(11) UNSIGNED DEFAULT NULL,
   `condition_id` INT(11) unsigned NOT NULL default '0',
   UNIQUE KEY `entry_spell` (`entry`,`spell`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
@@ -12947,7 +12878,9 @@ CREATE TABLE `spawn_group`  (
   `Type` int(11) NOT NULL COMMENT 'Creature or GO spawn group',
   `MaxCount` int(11) NOT NULL DEFAULT 0 COMMENT 'Maximum total count of all spawns in a group',
   `WorldState` int(11) NOT NULL DEFAULT 0 COMMENT 'Worldstate which enables spawning of given group',
+  `WorldStateExpression` int(11) NOT NULL DEFAULT 0 COMMENT 'Worldstate expression Id',
   `Flags` int(10) UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Flags for various behaviour',
+  `StringId` INT(11) UNSIGNED NOT NULL DEFAULT '0',
   PRIMARY KEY (`Id`)
 );
 

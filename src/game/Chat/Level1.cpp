@@ -1856,7 +1856,15 @@ bool ChatHandler::HandleGoXYZCommand(char* args)
     float z = (float)atof(pz);
     uint32 mapid;
     if (pmapid)
+    {
         mapid = (uint32)atoi(pmapid);
+        MapEntry const* mapEntry = sMapStore.LookupEntry(mapid);
+        if (!mapEntry || mapEntry->IsBattleGroundOrArena())
+        {
+            PSendSysMessage("Map %u is battleground or arena. Not allowed through XYZ command.", mapid);
+            return false;
+        }
+    }
     else
         mapid = _player->GetMapId();
 
@@ -1963,7 +1971,7 @@ bool ChatHandler::HandleGoWarpCommand(char* args)
         return false;
 
     char dir = arg1[0];
-    int32 value = (int32)atoi(arg2);
+    float value = (float)atof(arg2);
     float x = player->GetPositionX();
     float y = player->GetPositionY();
     float z = player->GetPositionZ();

@@ -487,7 +487,7 @@ Spell::Spell(WorldObject* caster, SpellEntry const* info, uint32 triggeredFlags,
 
 Spell::~Spell()
 {
-    if (m_CastItem)
+    if (!m_IsTriggeredSpell && m_CastItem)
         m_CastItem->SetUsedInSpell(false);
 }
 
@@ -2126,6 +2126,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, bool targ
                 }
             }
             m_targets.setDestination(nextPos.x, nextPos.y, nextPos.z);
+            break;
         }
         case TARGET_LOCATION_UNIT_POSITION:
         {
@@ -2853,20 +2854,7 @@ SpellCastResult Spell::CheckScriptTargeting(SpellEffectIndex effIndex, uint32 ch
                 MaNGOS::GameObjectListSearcher<MaNGOS::AllGameObjectEntriesListInObjectRangeCheck> checker(foundScriptGOTargets, go_check);
                 Cell::VisitGridObjects(m_trueCaster, checker, radius);
             }
-            for (auto itr = foundScriptGOTargets.begin(); itr != foundScriptGOTargets.end();)
-            {
-                if (!OnCheckTarget(*itr, effIndex))
-                    itr = foundScriptGOTargets.erase(itr);
-                else
-                    ++itr;
-            }
-            foundScriptGOTargets.sort([=](const GameObject* a, const GameObject* b) -> bool
-            {
-                return caster->GetDistance(a, true, DIST_CALC_NONE) < caster->GetDistance(b, true, DIST_CALC_NONE);
-            });
 
-            if (foundScriptGOTargets.size() > targetCount) // if we have too many targets, we need to trim the list
-                foundScriptGOTargets.resize(targetCount);
             break;
         }
         case SPELL_TARGET_TYPE_CREATURE:
@@ -2903,31 +2891,76 @@ SpellCastResult Spell::CheckScriptTargeting(SpellEffectIndex effIndex, uint32 ch
                     if (u_check.FoundOutOfRange())
                         foundButOutOfRange = true;
                 }
-                for (auto iter = foundScriptCreatureTargets.begin(); iter != foundScriptCreatureTargets.end();)
+            }
+            break;
+        }
+        case SPELL_TARGET_TYPE_STRING_ID:
+        {
+            for (uint32 stringId : entriesToUse)
+            {
+                auto creatures = m_trueCaster->GetMap()->GetCreatures(stringId);
+                for (Creature* creature : *creatures)
                 {
-                    bool failed = false;
-                    if (!OnCheckTarget(*iter, effIndex))
-                        failed = true;
-                    else if (m_spellInfo->HasAttribute(SPELL_ATTR_EX_EXCLUDE_CASTER) && m_trueCaster == (*iter))
-                        failed = true;
-                    if (failed)
-                        iter = foundScriptCreatureTargets.erase(iter);
+                    if (creature->IsWithinCombatDistInMap(caster, radius, true))
+                        foundScriptCreatureTargets.push_back(creature);
                     else
-                        ++iter;
+                        foundButOutOfRange = true;
                 }
-
-                foundScriptCreatureTargets.sort([=](const Creature* a, const Creature* b) -> bool
+                auto gameObjects = m_trueCaster->GetMap()->GetGameObjects(stringId);
+                for (GameObject* gameObject : *gameObjects)
                 {
-                    return caster->GetDistance(a, true, DIST_CALC_NONE) < caster->GetDistance(b, true, DIST_CALC_NONE);
-                });
-
-                if (foundScriptCreatureTargets.size() > targetCount) // if we have too many targets, we need to trim the list
-                    foundScriptCreatureTargets.resize(targetCount);
+                    if (gameObject->IsWithinDist(caster, radius, true))
+                        foundScriptGOTargets.push_back(gameObject);
+                    else
+                        foundButOutOfRange = true;
+                }
             }
             break;
         }
         default:
             break;
+    }
+
+    if (!foundScriptCreatureTargets.empty())
+    {
+        for (auto iter = foundScriptCreatureTargets.begin(); iter != foundScriptCreatureTargets.end();)
+        {
+            bool failed = false;
+            if (!OnCheckTarget(*iter, effIndex))
+                failed = true;
+            else if (m_spellInfo->HasAttribute(SPELL_ATTR_EX_EXCLUDE_CASTER) && m_trueCaster == (*iter))
+                failed = true;
+            if (failed)
+                iter = foundScriptCreatureTargets.erase(iter);
+            else
+                ++iter;
+        }
+
+        foundScriptCreatureTargets.sort([=](const Creature* a, const Creature* b) -> bool
+        {
+            return caster->GetDistance(a, true, DIST_CALC_NONE) < caster->GetDistance(b, true, DIST_CALC_NONE);
+        });
+
+        if (foundScriptCreatureTargets.size() > targetCount) // if we have too many targets, we need to trim the list
+            foundScriptCreatureTargets.resize(targetCount);
+    }
+
+    if (!foundScriptGOTargets.empty())
+    {
+        for (auto itr = foundScriptGOTargets.begin(); itr != foundScriptGOTargets.end();)
+        {
+            if (!OnCheckTarget(*itr, effIndex))
+                itr = foundScriptGOTargets.erase(itr);
+            else
+                ++itr;
+        }
+        foundScriptGOTargets.sort([=](const GameObject* a, const GameObject* b) -> bool
+        {
+            return caster->GetDistance(a, true, DIST_CALC_NONE) < caster->GetDistance(b, true, DIST_CALC_NONE);
+        });
+
+        if (foundScriptGOTargets.size() > targetCount) // if we have too many targets, we need to trim the list
+            foundScriptGOTargets.resize(targetCount);
     }
 
     if (!foundScriptCreatureTargets.empty())
@@ -2966,6 +2999,8 @@ SpellCastResult Spell::CheckScriptTargeting(SpellEffectIndex effIndex, uint32 ch
             // not report target not existence for triggered spells
             return foundButOutOfRange ? SPELL_FAILED_OUT_OF_RANGE : SPELL_FAILED_BAD_TARGETS;
         }
+        else if (foundButOutOfRange)
+            return SPELL_FAILED_OUT_OF_RANGE;
     }
     return SPELL_CAST_OK;
 }
@@ -2988,26 +3023,42 @@ void Spell::CheckSpellScriptTargets(SQLMultiStorage::SQLMSIteratorBounds<SpellTa
             if (spellST->type == SPELL_TARGET_TYPE_GAMEOBJECT || spellST->type == SPELL_TARGET_TYPE_GAMEOBJECT_GUID)
                 continue;
 
-            if (spellST->type == SPELL_TARGET_TYPE_CREATURE_GUID ? target->GetDbGuid() == spellST->targetEntry : target->GetEntry() == spellST->targetEntry)
+            bool fail = false;
+            switch (spellST->type)
             {
-                switch (spellST->type)
-                {
-                    case SPELL_TARGET_TYPE_DEAD:
-                        if (static_cast<Creature*>(target)->IsCorpse())
-                            targetUnitMap.push_back(target);
-                        break;
-                    case SPELL_TARGET_TYPE_CREATURE:
-                        if (target->IsAlive())
-                            targetUnitMap.push_back(target);
-                        break;
-                    case SPELL_TARGET_TYPE_CREATURE_GUID:
-                        targetUnitMap.push_back(target);
-                        break;
-                    default:
-                        break;
-                }
-                break;
+                case SPELL_TARGET_TYPE_CREATURE_GUID:
+                    fail = target->GetDbGuid() != spellST->targetEntry;
+                    break;
+                case SPELL_TARGET_TYPE_STRING_ID:
+                    break;
+                default:
+                    fail = target->GetEntry() != spellST->targetEntry;
+                    break;
             }
+            if (fail)
+                continue;
+
+            switch (spellST->type)
+            {
+                case SPELL_TARGET_TYPE_DEAD:
+                    if (static_cast<Creature*>(target)->IsCorpse())
+                        targetUnitMap.push_back(target);
+                    break;
+                case SPELL_TARGET_TYPE_CREATURE:
+                    if (target->IsAlive())
+                        targetUnitMap.push_back(target);
+                    break;
+                case SPELL_TARGET_TYPE_CREATURE_GUID:
+                    targetUnitMap.push_back(target);
+                    break;
+                case SPELL_TARGET_TYPE_STRING_ID:
+                    if (target->HasStringId(spellST->targetEntry))
+                        targetUnitMap.push_back(target);
+                    break;
+                default:
+                    break;
+            }
+            break;
         }
     }
 }
@@ -5036,6 +5087,10 @@ SpellCastResult Spell::CheckCast(bool strict)
                 if (!m_spellInfo->IsFitToFamily(SPELLFAMILY_DRUID, uint64(0x0000000000020000)))
                     return SPELL_FAILED_NOT_BEHIND;
             }
+
+            // duplicate block to avoid previous block complex logic
+            if (m_spellInfo->HasAttribute(SPELL_ATTR_SS_FACING_BACK) && !m_trueCaster->IsFacingTargetsBack(target))
+                return SPELL_FAILED_NOT_BEHIND;
 
             // Caster must be facing the targets front
             if (((m_spellInfo->Attributes == (SPELL_ATTR_IS_ABILITY | SPELL_ATTR_NOT_SHAPESHIFT | SPELL_ATTR_DO_NOT_SHEATH | SPELL_ATTR_CANCELS_AUTO_ATTACK_COMBAT)) && !m_trueCaster->IsFacingTargetsFront(target)))
@@ -7113,23 +7168,26 @@ void Spell::DelayedChannel()
 
     DEBUG_FILTER_LOG(LOG_FILTER_SPELL_CAST, "Spell %u partially interrupted for %i ms, new duration: %u ms", m_spellInfo->Id, delaytime, m_timer);
 
-    for (TargetList::const_iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
+    SendChannelUpdate(m_timer);
+
+    if (m_timer != 0) // must be after channel update
     {
-        if ((*ihit).missCondition == SPELL_MISS_NONE)
+        for (auto& target : m_UniqueTargetInfo)
         {
-            if (Unit* unit = m_caster->GetObjectGuid() == ihit->targetGUID ? m_caster : ObjectAccessor::GetUnit(*m_caster, ihit->targetGUID))
-                unit->DelaySpellAuraHolder(m_spellInfo->Id, delaytime, m_caster->GetObjectGuid());
+            if (target.missCondition == SPELL_MISS_NONE)
+            {
+                if (Unit* unit = m_caster->GetObjectGuid() == target.targetGUID ? m_caster : ObjectAccessor::GetUnit(*m_caster, target.targetGUID))
+                    unit->DelaySpellAuraHolder(m_spellInfo->Id, delaytime, m_caster->GetObjectGuid());
+            }
+        }
+
+        for (int j = 0; j < MAX_EFFECT_INDEX; ++j)
+        {
+            // partially interrupt persistent area auras
+            if (DynamicObject* dynObj = m_caster->GetDynObject(m_spellInfo->Id, SpellEffectIndex(j)))
+                dynObj->Delay(delaytime);
         }
     }
-
-    for (int j = 0; j < MAX_EFFECT_INDEX; ++j)
-    {
-        // partially interrupt persistent area auras
-        if (DynamicObject* dynObj = m_caster->GetDynObject(m_spellInfo->Id, SpellEffectIndex(j)))
-            dynObj->Delay(delaytime);
-    }
-
-    SendChannelUpdate(m_timer);
 }
 
 void Spell::UpdateOriginalCasterPointer()
@@ -7463,7 +7521,7 @@ bool SpellEvent::Execute(uint64 e_time, uint32 p_time)
                     if (n_offset)
                     {
                         // re-add us to the queue
-                        m_Spell->GetCaster()->m_events.AddEvent(this, m_Spell->GetDelayStart() + n_offset, false);
+                        m_Spell->GetTrueCaster()->m_events.AddEvent(this, m_Spell->GetDelayStart() + n_offset, false);
                         return false;                       // event not complete
                     }
                     // event complete
@@ -7475,7 +7533,7 @@ bool SpellEvent::Execute(uint64 e_time, uint32 p_time)
                 // delaying had just started, record the moment
                 m_Spell->SetDelayStart(e_time);
                 // re-plan the event for the delay moment
-                m_Spell->GetCaster()->m_events.AddEvent(this, e_time + m_Spell->GetDelayMoment(), false);
+                m_Spell->GetTrueCaster()->m_events.AddEvent(this, e_time + m_Spell->GetDelayMoment(), false);
                 return false;                               // event not complete
             }
         } break;
@@ -7488,7 +7546,7 @@ bool SpellEvent::Execute(uint64 e_time, uint32 p_time)
     }
 
     // spell processing not complete, plan event on the next update interval
-    m_Spell->GetCaster()->m_events.AddEvent(this, e_time + 1, false);
+    m_Spell->GetTrueCaster()->m_events.AddEvent(this, e_time + 1, false);
     return false;                                           // event not complete
 }
 
@@ -7813,6 +7871,11 @@ void Spell::SelectMountByAreaAndSkill(Unit* target, SpellEntry const* parentSpel
         target->CastSpell(target, spellId150, TRIGGERED_NONE, nullptr, nullptr, ObjectGuid(), parentSpell);
     else if (spellId75 > 0)
         target->CastSpell(target, spellId75, TRIGGERED_NONE, nullptr, nullptr, ObjectGuid(), parentSpell);
+}
+
+bool Spell::IsInterruptible() const
+{
+    return (m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_COMBAT) && m_spellInfo->PreventionType == SPELL_PREVENTION_TYPE_SILENCE && CanBeInterrupted();
 }
 
 void Spell::RegisterAuraProc(Aura* aura)
@@ -8545,13 +8608,6 @@ bool Spell::OnCheckTarget(Unit* target, SpellEffectIndex eff) const
             if (m_caster->getThreatManager().getThreatList().size() >= 2 && target == m_caster->GetVictim())
                 return false;
             break;
-        case 39365:                                         // Thundering Storm - only hits 25-100yd range targets
-        {
-            float dist = sqrt(target->GetDistance(m_caster->GetPositionX(), m_caster->GetPositionY(), m_caster->GetPositionZ(), DIST_CALC_NONE));
-            if (dist < 25.f || dist > 100.f)
-                return false;
-            break;
-        }
         case 39921:                                         // Vimgol Pentagram Beam
         {
             if (target->GetTypeId() != TYPEID_UNIT || target->GetEntry() != 23040 || m_caster->GetTypeId() != TYPEID_UNIT || m_caster->GetEntry() != 23040)

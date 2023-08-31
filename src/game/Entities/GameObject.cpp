@@ -178,7 +178,7 @@ void GameObject::RemoveFromWorld()
     WorldObject::RemoveFromWorld();
 }
 
-bool GameObject::Create(uint32 dbGuid, uint32 guidlow, uint32 name_id, Map* map, float x, float y, float z, float ang, float rotation0, float rotation1, float rotation2, float rotation3, uint32 animprogress, GOState go_state)
+bool GameObject::Create(uint32 dbGuid, uint32 guidlow, uint32 name_id, Map* map, float x, float y, float z, float ang, float rotation0, float rotation1, float rotation2, float rotation3, uint32 animprogress, GOState goState)
 {
     MANGOS_ASSERT(map);
     Relocate(x, y, z, ang);
@@ -232,7 +232,7 @@ bool GameObject::Create(uint32 dbGuid, uint32 guidlow, uint32 name_id, Map* map,
     SetEntry(goinfo->id);
     SetDisplayId(goinfo->displayId);
 
-    SetGoState(go_state);
+    SetGoState(goState);
     SetGoType(GameobjectTypes(goinfo->type));
 
     SetGoAnimProgress(animprogress);
@@ -244,7 +244,7 @@ bool GameObject::Create(uint32 dbGuid, uint32 guidlow, uint32 name_id, Map* map,
             // safe to use door cos both have startOpen on same spot
             SetGoState(goinfo->door.startOpen ? GO_STATE_ACTIVE : GO_STATE_READY);
             if (goinfo->door.startOpen)
-                m_lootState = GO_NOT_READY;
+                m_lootState = GO_ACTIVATED;
             break;
         case GAMEOBJECT_TYPE_TRAP:
             // values from rogue detect traps aura
@@ -276,9 +276,15 @@ bool GameObject::Create(uint32 dbGuid, uint32 guidlow, uint32 name_id, Map* map,
         case GAMEOBJECT_TYPE_QUESTGIVER:
             SetUInt32Value(GAMEOBJECT_DYN_FLAGS, GO_DYNFLAG_LO_ACTIVATE);
             break;
+        case GAMEOBJECT_TYPE_AURA_GENERATOR:
+            SetGoState(goinfo->auraGenerator.startOpen ? GO_STATE_ACTIVE : GO_STATE_READY);
+            break;
         default:
             break;
     }
+
+    if (goinfo->StringId)
+        SetStringId(goinfo->StringId, true);
 
     // Notify the battleground or outdoor pvp script
     if (map->IsBattleGroundOrArena())
@@ -292,8 +298,8 @@ bool GameObject::Create(uint32 dbGuid, uint32 guidlow, uint32 name_id, Map* map,
     if (InstanceData* iData = map->GetInstanceData())
         iData->OnObjectCreate(this);
 
-    // Check if GameObject is Large
-    if (GetGOInfo()->IsLargeGameObject())
+    // Check if GameObject is Large, skip if map has same or better visibility (e.g. Battleground)
+    if (GetGOInfo()->IsLargeGameObject() && GetVisibilityData().GetVisibilityDistance() < VISIBILITY_DISTANCE_LARGE)
         GetVisibilityData().SetVisibilityDistanceOverride(VisibilityDistanceType::Large);
 
     if (GetEntry() == 187039) // Smuggled Mana Cell - only GO in phase in TBC
@@ -477,8 +483,8 @@ void GameObject::Update(const uint32 diff)
                                 {
                                     case 1: // friendly
                                     {
-                                        MaNGOS::AnyFriendlyUnitInObjectRangeCheck u_check(this, nullptr, radius);
-                                        MaNGOS::UnitSearcher<MaNGOS::AnyFriendlyUnitInObjectRangeCheck> checker(target, u_check);
+                                        MaNGOS::AnySpellAssistableUnitInObjectRangeCheck u_check(this, nullptr, radius);
+                                        MaNGOS::UnitSearcher<MaNGOS::AnySpellAssistableUnitInObjectRangeCheck> checker(target, u_check);
                                         Cell::VisitAllObjects(this, checker, radius);
                                         break;
                                     }
@@ -581,8 +587,16 @@ void GameObject::Update(const uint32 diff)
                 linkedTrap->Delete();
             }
 
+            bool preventDespawn = false;
             switch (GetGoType())
             {
+                case GAMEOBJECT_TYPE_TRAP:
+                    if (m_events.GetEvents().size() > 0)
+                    {
+                        preventDespawn = true;
+                        break;
+                    }
+                    break;
                 case GAMEOBJECT_TYPE_GOOBER:
                     // if gameobject should cast spell, then this, but some GOs (type = 10) should be destroyed
                     if (uint32 spellId = GetGOInfo()->goober.spellId)
@@ -630,6 +644,9 @@ void GameObject::Update(const uint32 diff)
                 default:
                     break;
             }
+
+            if (preventDespawn) // mainly serves to prevent casting traps from despawning
+                break;
 
             // Remove wild summoned after use
             if (!HasStaticDBSpawnData() && (!GetSpellId() || GetGOInfo()->GetDespawnPossibility() || GetGOInfo()->IsDespawnAtAction() || m_forcedDespawn))
@@ -817,8 +834,6 @@ void GameObject::SaveToDB(uint32 mapid, uint8 spawnMask) const
     data.rotation3 = GetFloatValue(GAMEOBJECT_ROTATION + 3);
     data.spawntimesecsmin = m_spawnedByDefault ? (int32)m_respawnDelay : -(int32)m_respawnDelay;
     data.spawntimesecsmax = m_spawnedByDefault ? (int32)m_respawnDelay : -(int32)m_respawnDelay;
-    data.animprogress = GetGoAnimProgress();
-    data.go_state = GetGoState();
     data.spawnMask = spawnMask;
 
     // updated in DB
@@ -837,9 +852,7 @@ void GameObject::SaveToDB(uint32 mapid, uint8 spawnMask) const
        << GetFloatValue(GAMEOBJECT_ROTATION + 2) << ", "
        << GetFloatValue(GAMEOBJECT_ROTATION + 3) << ", "
        << m_respawnDelay << ", "
-       << m_respawnDelay << ", " // TODO: Add variance
-       << uint32(GetGoAnimProgress()) << ", "
-       << uint32(GetGoState()) << ")";
+       << m_respawnDelay << ")";
 
     WorldDatabase.BeginTransaction();
     WorldDatabase.PExecuteLog("DELETE FROM gameobject WHERE guid = '%u'", GetGUIDLow());
@@ -857,6 +870,10 @@ bool GameObject::LoadFromDB(uint32 dbGuid, Map* map, uint32 newGuid, uint32 forc
         return false;
     }
 
+    // Gameobject can be loaded already in map if grid has been unloaded while gameobject moves to another grid
+    if (map->GetGameObject(dbGuid))
+        return false;
+
     uint32 entry = forcedEntry ? forcedEntry : data->id;
     // uint32 map_id = data->mapid;                         // already used before call
     float x = data->posX;
@@ -870,7 +887,6 @@ bool GameObject::LoadFromDB(uint32 dbGuid, Map* map, uint32 newGuid, uint32 forc
     float rotation3 = data->rotation3;
 
     uint32 animprogress = data->animprogress;
-    GOState go_state = data->go_state;
 
     SpawnGroupEntry* groupEntry = map->GetMapDataContainer().GetSpawnGroupByGuid(dbGuid, TYPEID_GAMEOBJECT); // use dynguid by default \o/
     GameObjectGroup* group = nullptr;
@@ -891,17 +907,23 @@ bool GameObject::LoadFromDB(uint32 dbGuid, Map* map, uint32 newGuid, uint32 forc
             dynguid = true;
     }
 
-    if (dynguid)
+    if (dynguid || newGuid == 0)
         newGuid = map->GenerateLocalLowGuid(HIGHGUID_GAMEOBJECT);
 
     if (uint32 randomEntry = sObjectMgr.GetRandomGameObjectEntry(dbGuid))
         entry = randomEntry;
 
-    if (!Create(dbGuid, newGuid, entry, map, x, y, z, ang, rotation0, rotation1, rotation2, rotation3, animprogress, go_state))
+    if (!Create(dbGuid, newGuid, entry, map, x, y, z, ang, rotation0, rotation1, rotation2, rotation3, animprogress, GO_STATE_READY))
         return false;
+
+    if (data->goState != -1)
+        SetGoState(GOState(data->goState));
 
     if (group)
         SetGameObjectGroup(group);
+
+    if (groupEntry && groupEntry->StringId)
+        SetStringId(groupEntry->StringId, true);
 
     if (!GetGOInfo()->GetDespawnPossibility() && !GetGOInfo()->IsDespawnAtAction() && data->spawntimesecsmin >= 0)
     {
@@ -1397,7 +1419,7 @@ void GameObject::Use(Unit* user, SpellEntry const* spellInfo)
 
     bool scriptReturnValue = user->GetTypeId() == TYPEID_PLAYER && sScriptDevAIMgr.OnGameObjectUse((Player*)user, this);
     if (!scriptReturnValue)
-        GetMap()->ScriptsStart(sGameObjectTemplateScripts, GetEntry(), spellCaster, this);
+        GetMap()->ScriptsStart(SCRIPT_TYPE_GAMEOBJECT_TEMPLATE, GetEntry(), spellCaster, this);
 
     if (AI())
         AI()->OnUse(user, spellInfo);
@@ -1413,7 +1435,7 @@ void GameObject::Use(Unit* user, SpellEntry const* spellInfo)
 
             // activate script
             if (!scriptReturnValue)
-                GetMap()->ScriptsStart(sGameObjectScripts, GetDbGuid(), spellCaster, this);
+                GetMap()->ScriptsStart(SCRIPT_TYPE_GAMEOBJECT, GetDbGuid(), spellCaster, this);
             return;
         }
         case GAMEOBJECT_TYPE_BUTTON:                        // 1
@@ -1436,7 +1458,7 @@ void GameObject::Use(Unit* user, SpellEntry const* spellInfo)
 
             // activate script
             if (!scriptReturnValue)
-                GetMap()->ScriptsStart(sGameObjectScripts, GetDbGuid(), spellCaster, this);
+                GetMap()->ScriptsStart(SCRIPT_TYPE_GAMEOBJECT, GetDbGuid(), spellCaster, this);
 
             return;
         }
@@ -1613,7 +1635,7 @@ void GameObject::Use(Unit* user, SpellEntry const* spellInfo)
 
             // activate script
             if (!scriptReturnValue)
-                GetMap()->ScriptsStart(sGameObjectScripts, GetDbGuid(), spellCaster, this);
+                GetMap()->ScriptsStart(SCRIPT_TYPE_GAMEOBJECT, GetDbGuid(), spellCaster, this);
             else
                 return;
 
