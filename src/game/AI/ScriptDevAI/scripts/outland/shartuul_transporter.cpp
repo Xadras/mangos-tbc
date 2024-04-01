@@ -61,7 +61,7 @@ struct npc_doomguard_punisherAI : public CombatAI
     ScriptedInstance* m_instance;
     ObjectGuid m_demonGuid;
 
-    void ReceiveAIEvent(AIEventType eventType, Unit* /*sender*/, Unit* invoker, uint32 /*miscValue*/)
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*sender*/, Unit* invoker, uint32 /*miscValue*/) override
     {
         if (eventType == AI_EVENT_CUSTOM_A)
         {
@@ -139,7 +139,7 @@ struct npc_shivan_assassinAI : public CombatAI
 
     ObjectGuid m_demonGuid;
 
-    void ReceiveAIEvent(AIEventType eventType, Unit* /*sender*/, Unit* invoker, uint32 /*miscValue*/)
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*sender*/, Unit* invoker, uint32 /*miscValue*/) override
     {
         if (eventType == AI_EVENT_CUSTOM_A)
         {
@@ -239,7 +239,7 @@ struct npc_eye_of_shartuulAI : public CombatAI
 
     ObjectGuid m_demonGuid;
 
-    void ReceiveAIEvent(AIEventType eventType, Unit* /*sender*/, Unit* invoker, uint32 /*miscValue*/)
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*sender*/, Unit* invoker, uint32 /*miscValue*/) override
     {
         if (eventType == AI_EVENT_CUSTOM_A)
         {
@@ -335,7 +335,7 @@ struct npc_dreadmawAI : public CombatAI
 
     ObjectGuid m_demonGuid;
 
-    void ReceiveAIEvent(AIEventType eventType, Unit* /*sender*/, Unit* invoker, uint32 /*miscValue*/)
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*sender*/, Unit* invoker, uint32 /*miscValue*/) override
     {
         if (eventType == AI_EVENT_CUSTOM_A)
         {
@@ -852,7 +852,7 @@ struct ShivanShapeshiftForm : public AuraScript
                 case SPELL_ASPECT_OF_THE_ICE:       spellSet = 2; break;
                 case SPELL_ASPECT_OF_THE_SHADOW:    spellSet = 0; break;
             }
-            demon->SetSpellList(spellSet);
+            demon->SetSpellList(demon->GetEntry() * 100 + spellSet);
             charmInfo->InitPossessCreateSpells();
             if (Player* player = dynamic_cast<Player*>(demon->GetCharmer()))
                 player->PossessSpellInitialize();

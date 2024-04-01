@@ -198,6 +198,7 @@ enum eConfigUInt32Values
     CONFIG_UINT32_GUID_RESERVE_SIZE_GAMEOBJECT,
     CONFIG_UINT32_CREATURE_RESPAWN_AGGRO_DELAY,
     CONFIG_UINT32_CREATURE_CHECK_FOR_HELP_AGGRO_DELAY,
+    CONFIG_UINT32_CREATURE_LINKING_AGGRO_DELAY,
     CONFIG_UINT32_MAX_WHOLIST_RETURNS,
     CONFIG_UINT32_FOGOFWAR_STEALTH,
     CONFIG_UINT32_FOGOFWAR_HEALTH,
@@ -242,9 +243,17 @@ enum eConfigFloatValues
     CONFIG_FLOAT_RATE_DROP_ITEM_QUEST,
     CONFIG_FLOAT_RATE_DROP_MONEY,
     CONFIG_FLOAT_RATE_PET_XP_KILL,
+    CONFIG_FLOAT_RATE_PET_XP_KILL_VANILLA,
+    CONFIG_FLOAT_RATE_PET_XP_KILL_BC,
     CONFIG_FLOAT_RATE_XP_KILL,
+    CONFIG_FLOAT_RATE_XP_KILL_VANILLA,
+    CONFIG_FLOAT_RATE_XP_KILL_BC,
     CONFIG_FLOAT_RATE_XP_QUEST,
+    CONFIG_FLOAT_RATE_XP_QUEST_VANILLA,
+    CONFIG_FLOAT_RATE_XP_QUEST_BC,
     CONFIG_FLOAT_RATE_XP_EXPLORE,
+    CONFIG_FLOAT_RATE_XP_EXPLORE_VANILLA,
+    CONFIG_FLOAT_RATE_XP_EXPLORE_BC,
     CONFIG_FLOAT_RATE_REPUTATION_GAIN,
     CONFIG_FLOAT_RATE_REPUTATION_LOWLEVEL_KILL,
     CONFIG_FLOAT_RATE_REPUTATION_LOWLEVEL_QUEST,
@@ -376,6 +385,7 @@ enum eConfigBoolValues
     CONFIG_BOOL_AUTOLOAD_ACTIVE,
     CONFIG_BOOL_PATH_FIND_OPTIMIZE,
     CONFIG_BOOL_PATH_FIND_NORMALIZE_Z,
+    CONFIG_BOOL_DISABLE_INSTANCE_RELOCATE,
     CONFIG_BOOL_VALUE_COUNT
 };
 
@@ -645,6 +655,10 @@ class World
         static uint32 GetCurrentMSTime() { return m_currentMSTime; }
         static TimePoint GetCurrentClockTime() { return m_currentTime; }
         static uint32 GetCurrentDiff() { return m_currentDiff; }
+#ifdef ENABLE_PLAYERBOTS
+        static uint32 GetAverageDiff() { return m_averageDiff; }
+        static uint32 GetMaxDiff() { return m_maxDiff; }
+#endif
 
         template<typename T>
         void ExecuteForAllSessions(T executor) const
@@ -771,6 +785,13 @@ class World
         static uint32 m_currentMSTime;
         static TimePoint m_currentTime;
         static uint32 m_currentDiff;
+#ifdef ENABLE_PLAYERBOTS
+        static uint32 m_currentDiffSum;
+        static uint32 m_currentDiffSumIndex;
+        static uint32 m_averageDiff;
+        static uint32 m_maxDiff;
+        static std::list<uint32> m_histDiff;
+#endif
 
         Messager<World> m_messager;
 

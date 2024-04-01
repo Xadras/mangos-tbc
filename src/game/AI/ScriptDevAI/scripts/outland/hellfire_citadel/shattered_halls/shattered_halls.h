@@ -5,6 +5,8 @@
 #ifndef DEF_SHATTERED_H
 #define DEF_SHATTERED_H
 
+#include "World/WorldStateDefines.h"
+
 enum
 {
     MAX_ENCOUNTER               = 5,
@@ -72,7 +74,35 @@ enum
     NPC_HEARTHEN_GUARD          = 17621,
     NPC_SHARPSHOOTER_GUARD      = 17622,
     NPC_REAVER_GUARD            = 17623,
+    
+    // First Group in Dungeon should not drop any loot/give any rep
+    NPC_SHATTERED_HAND_HEATHEN      = 17420,
+    NPC_SHATTERED_HAND_SAVAGE       = 16523,    
+    
+    AURA_SLEEPING                   = 16093,
+
+    SPAWN_GROUP_SENTRY              = 5400013,              // SpawnGroup that triggers spawning of Legionnaire Group 03
+
+    STRING_ID_LEGIONNAIRE_06_GROUP  = 5400017               // Legionnaire Group 06 StringID
 };
+
+// Legionnaire StringID  
+const std::string FIRST_LEGIONNAIRE_STRING        = "SHH_LEGIONNAIRE_01";
+const std::string SECOND_LEGIONNAIRE_STRING       = "SHH_LEGIONNAIRE_02";
+const std::string THIRD_LEGIONNAIRE_STRING        = "SHH_LEGIONNAIRE_03";
+const std::string FOURTH_LEGIONNAIRE_STRING       = "SHH_LEGIONNAIRE_04";
+const std::string FIFTH_LEGIONNAIRE_STRING        = "SHH_LEGIONNAIRE_05";
+const std::string SIX_LEGIONNAIRE_STRING          = "SHH_LEGIONNAIRE_06";
+const std::string SEVENTH_LEGIONNAIRE_STRING      = "SHH_LEGIONNAIRE_07";
+const std::string EIGTH_LEGIONNAIRE_STRING        = "SHH_LEGIONNAIRE_08";
+
+// Reinforcement String IDs 
+const std::string SLEEPING_REINF_STRING           = "SHH_SLEEPING_REINF";     // StringID assigned to sleeping mobs
+const std::string DUMMY_REINF_STRING_1            = "SHH_DUMMY_REINF_01";     // StringID assigned to Dummy Group nr 1
+const std::string DUMMY_REINF_STRING_2            = "SHH_DUMMY_REINF_02";     // StringID assigned to Dummy Group nr 2
+
+const std::string STRING_ID_ENTRANCE_GROUP        = "SHH_ENTRANCE_GROUP";     // StringID assigned to entrance group to prevent rep/xp farm abuse
+const std::string STRING_ID_FEL_ORC               = "SHH_FEL_ORC_CONVERT";    // StringID assigned to FelOrcConvert npcs that can call legionnaire for reinf
 
 struct SpawnLocation
 {
@@ -108,6 +138,8 @@ class instance_shattered_halls : public ScriptedInstance
         void OnCreatureEvade(Creature* creature) override;
         void OnCreatureEnterCombat(Creature* creature) override;
 
+        void OnCreatureGroupDespawn(CreatureGroup* pGroup, Creature* pCreature) override;
+
         void SetData(uint32 type, uint32 data) override;
         uint32 GetData(uint32 type) const override;
 
@@ -119,8 +151,6 @@ class instance_shattered_halls : public ScriptedInstance
         void GauntletReset();
 
         void DoInitialGets();
-
-        void DoSummonInitialWave();
 
         void DoSummonSHZealot();
 
@@ -141,10 +171,11 @@ class instance_shattered_halls : public ScriptedInstance
         uint32 m_team;
         uint8 m_executionStage;
         uint8 m_prisonersLeft;
+        uint32 m_legionnaireIntroTimer;
 
-        GuidVector m_gauntletPermanentGuids;
+        std::vector<uint32> m_gauntletPermanentGuids;
         GuidVector m_gauntletTemporaryGuids;
-        GuidVector m_gauntletBossGuids;
+        std::vector<uint32>  m_gauntletBossGuids;
 
         std::vector<std::pair<ObjectGuid, uint32>> m_blazeTimers;
 

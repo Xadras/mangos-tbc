@@ -30,7 +30,7 @@
 #include "GameEvents/GameEventMgr.h"
 #include "Pools/PoolManager.h"
 #include "Server/Opcodes.h"
-#include "Log.h"
+#include "Log/Log.h"
 #include "Loot/LootMgr.h"
 #include "Maps/MapManager.h"
 #include "AI/BaseAI/CreatureAI.h"
@@ -540,7 +540,9 @@ bool Creature::UpdateEntry(uint32 Entry, const CreatureData* data /*=nullptr*/, 
     uint32 faction = GetCreatureInfo()->Faction;
     if (data && data->spawnTemplate->faction)
         faction = data->spawnTemplate->faction;
-    setFaction(faction);
+    // update entry can occur during player vehicle ride - ignore faction change then
+    if (!HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED) && !hasUnitState(UNIT_STAT_POSSESSED))
+        setFaction(faction);
 
     SetDefaultGossipMenuId(GetCreatureInfo()->GossipMenuId);
 
@@ -562,6 +564,12 @@ bool Creature::UpdateEntry(uint32 Entry, const CreatureData* data /*=nullptr*/, 
     // we may need to append or remove additional flags
     if (HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IN_COMBAT))
         unitFlags |= UNIT_FLAG_IN_COMBAT;
+    if (HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PET_IN_COMBAT))
+        unitFlags |= UNIT_FLAG_PET_IN_COMBAT;
+    if (HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED))
+        unitFlags |= UNIT_FLAG_PLAYER_CONTROLLED;
+    if (HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_POSSESSED))
+        unitFlags |= UNIT_FLAG_POSSESSED;
 
     // TODO: Get rid of this by fixing DB data, seems to be static
     if (m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING))
@@ -1636,7 +1644,8 @@ bool Creature::LoadFromDB(uint32 dbGuid, Map* map, uint32 newGuid, uint32 forced
     m_respawnradius = data->spawndist;
 
     m_respawnDelay = data->GetRandomRespawnTime();
-    if (!IsUsingNewSpawningSystem())
+    bool isUsingNewSpawningSystem = IsUsingNewSpawningSystem();
+    if (!isUsingNewSpawningSystem)
         m_corpseDelay = std::min(m_respawnDelay * 9 / 10, m_corpseDelay); // set corpse delay to 90% of the respawn delay
     m_deathState = ALIVE;
 
@@ -1644,6 +1653,10 @@ bool Creature::LoadFromDB(uint32 dbGuid, Map* map, uint32 newGuid, uint32 forced
 
     if (m_respawnTime > time(nullptr))                         // not ready to respawn
     {
+        if (isUsingNewSpawningSystem && !group) // only at this point we know if marked as dynguid per entry
+        {
+            return false;
+        }
         m_deathState = DEAD;
         SetHealth(0);
         if (CanFly())
@@ -1833,7 +1846,7 @@ void Creature::SetDeathState(DeathState s)
         {
             m_respawnTime = std::numeric_limits<time_t>::max();
             if (m_respawnDelay && s == JUST_DIED && !GetCreatureGroup())
-                GetMap()->GetSpawnManager().AddCreature(m_respawnDelay, GetDbGuid());
+                GetMap()->GetSpawnManager().AddCreature(GetDbGuid());
         }
     }
 
@@ -2630,54 +2643,6 @@ void Creature::FillGuidsListFromThreatList(GuidVector& guids, uint32 maxamount /
         guids.push_back((*itr)->getUnitGuid());
 }
 
-struct AddCreatureToRemoveListInMapsWorker
-{
-    AddCreatureToRemoveListInMapsWorker(uint32 dbGuid) : i_guid(dbGuid) {}
-
-    void operator()(Map* map)
-    {
-        if (Creature* pCreature = map->GetCreature(i_guid))
-            pCreature->AddObjectToRemoveList();
-    }
-
-    uint32 i_guid;
-};
-
-void Creature::AddToRemoveListInMaps(uint32 db_guid, CreatureData const* data)
-{
-    AddCreatureToRemoveListInMapsWorker worker(db_guid);
-    sMapMgr.DoForAllMapsWithMapId(data->mapid, worker);
-}
-
-struct SpawnCreatureInMapsWorker
-{
-    SpawnCreatureInMapsWorker(uint32 guid, CreatureData const* data)
-        : i_guid(guid), i_data(data) {}
-
-    void operator()(Map* map)
-    {
-        // We use spawn coords to spawn
-        if (map->IsLoaded(i_data->posX, i_data->posY))
-        {
-            Creature* pCreature = new Creature;
-            // DEBUG_LOG("Spawning creature %u",*itr);
-            if (!pCreature->LoadFromDB(i_guid, map, i_guid, 0))
-            {
-                delete pCreature;
-            }
-        }
-    }
-
-    uint32 i_guid;
-    CreatureData const* i_data;
-};
-
-void Creature::SpawnInMaps(uint32 db_guid, CreatureData const* data)
-{
-    SpawnCreatureInMapsWorker worker(db_guid, data);
-    sMapMgr.DoForAllMapsWithMapId(data->mapid, worker);
-}
-
 bool Creature::HasStaticDBSpawnData() const
 {
     if (GetObjectGuid().GetHigh() == HIGHGUID_PET)
@@ -2856,7 +2821,7 @@ void Creature::SetBaseRunSpeed(float speed, bool force)
 
 void Creature::LockOutSpells(SpellSchoolMask schoolMask, uint32 duration)
 {
-    if (GetCreatureInfo()->MechanicImmuneMask & (1 << (MECHANIC_SILENCE - 1)))
+    if (m_settings.HasFlag(CreatureStaticFlags2::NO_INTERRUPT_SCHOOL_COOLDOWN))
         return;
 
     WorldObject::LockOutSpells(schoolMask, duration);
@@ -3083,7 +3048,7 @@ void Creature::AddCooldown(SpellEntry const& spellEntry, ItemPrototype const* /*
                 // send to client
                 WorldPacket data(SMSG_SPELL_COOLDOWN, 8 + 1 + 4);
                 data << GetObjectGuid();
-                data << uint8(1);
+                data << uint8(SPELL_COOLDOWN_FLAG_INCLUDE_GCD);
                 data << uint32(spellEntry.Id);
                 data << uint32(recTime);
                 player->GetSession()->SendPacket(data);
